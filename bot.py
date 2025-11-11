@@ -2,7 +2,8 @@ import os
 from dotenv import load_dotenv
 import discord 
 from discord.ui import Modal, TextInput, View, Button, ChannelSelect, RoleSelect
-import discord.ext.commands 
+from discord.ext import commands
+from discord.ext.commands import Context
 from discord.ext import tasks
 from tinydb import TinyDB, Query
 from random import choice
@@ -17,35 +18,83 @@ CHANNEL_TABLE = 'channels'
 GIVE_TABLE = 'GIVE'
 TAKE_TABLE = 'TAKE'
 APPROVER_TABLE = 'APPROVER'
+JAMS_TABLE = 'JAMS'
+SERVER_ID = 811409264534224947
 
 colors = 0x7ac943, 0x563795, 0x2193c7
 KHANO_USERID = 222094201356025857
 AKDENIZ_USERID = 385887296555319296
 
+client = commands.Bot(command_prefix="!", intents=discord.Intents.all())
 
-client = discord.ext.commands.Bot(command_prefix="/", intents=discord.Intents.all())
+# region ACTIONS
 
-@client.event
-async def on_ready(): #
-    print(f'{client.user} is connected')
+async def reply_no_permission(context: Context):
+    await context.reply('Bu komutu kullanmaya yetkiniz yok.', ephemeral=True, delete_after=30)
 
-    actives.start()
-    await client.tree.sync()
+async def welcome_user(guild, member):
+    db = TinyDB(DB_NAME)
+    newuserchannel = db.table('newuserchannel')
+    newuserchannel = newuserchannel.search(Query().guild == guild.id)
+    if newuserchannel:
+        channel = guild.get_channel(newuserchannel[0]['channel'])
+        if not channel:
+            return
+        message = db.table('newusermessage')
+        message = message.search(Query().guild == guild.id)
+        if message:
+            message = message[0]['message']
+            if "%split%" in message:
+                listelen = message.split("%split%")
+                message = choice(listelen)
+            if "%user%" in message:
+                message = message.replace("%user%", f"{member.nick}")
+            if "\>" in message:
+                message = message.replace("\<", f"<")
+            embed = discord.Embed(title="ÜNOG'a Hoş Geldin!", description=message, color=choice(colors))
+            embed.set_thumbnail(url=member.avatar)
+            msg = await channel.send("", embed=embed)
+            emojilist = [
+            "👋", "🎉", "✨", "🎊", "🌟", "🚀", "🎈", "✅", "🪄",
+            "🌠", "🔥","💫", "💎",
+            "🎶", "📣", "⚡", "🌅", "🥳","🎮","🕹️", "💻",  
+            "🖥️", "🏞️", "💾"
+            ]
+            emojiname = [
+                "Welcome", 
+                "ZoeWelcome", 
+                "blushie", 
+                "bnhatodorokidab", 
+                "ere", 
+                "hello", 
+                "hellothere", 
+                "hellothere1", 
+                "sailor_mercury", 
+                "watamee", 
+                "welcomehat", 
+                "PepeWelcome", 
+                "EN_Pretty", 
+                "EN_neko_expect", 
+                "EN_cat_mustache46", 
+                "A_logo_unog", 
+                "E_VoHiYo",
+                "YoureWelcome", 
+                "kanna_oh_welcome", 
+                "blue_welcome", 
+                "Iruma_wiggle_dizzy_dance", 
+                "cute2", 
+                "welcomea", 
+                "welcometohell", 
+                "kawaiiwave", 
+                "3GMAROC", 
+                "E_Excited", 
+                "E_CuteTakingNotes", 
+                "E_cuteDog"
+            ]
+            emoji = discord.utils.get(guild.emojis, name=choice(emojiname))
+            await msg.add_reaction(choice((choice(emojilist), emoji)))
 
-@client.command()
-async def tree(ctx):
-    await client.tree.sync()
-
-@client.command()
-async def dbjson(ctx):
-    if not is_user_admin(ctx.author):
-        await ctx.reply('Bu komutu kullanmaya yetkiniz yok.', ephemeral=True, delete_after=30)
-        return
-    file = discord.File("members.json")
-    await ctx.send(file=file)
-
-
-async def basvuru_onayla(interaction):
+async def approve_verification(interaction):
     if not is_user_approver(interaction.user):
         await interaction.response.send_message("Bu işlemi yapmaya yetkiniz yok.", ephemeral=True, delete_after=30)
         return
@@ -94,14 +143,17 @@ async def basvuru_onayla(interaction):
         view.add_item(buton2)
         await interaction.message.edit(view=view)
 
-    await send_message(interaction.guild, user)
+    await welcome_user(interaction.guild, user)
 
-async def basvuru_reddet(interaction):
+async def deny_verification(interaction):
     if not is_user_admin(interaction.user):
         await interaction.response.send_message("Bu işlemi yapmaya yetkiniz yok.", ephemeral=True, delete_after=30)
         return 
     await interaction.response.send_modal(ReddetModal(interaction))
-    
+
+# endregion
+
+# region MODALS
 
 class ReddetModal(Modal):
     def __init__(self, interaction: discord.Interaction):
@@ -140,6 +192,7 @@ class ReddetModal(Modal):
             view.add_item(buton2)
             await self.maininte.message.edit(view=view)
         await user.send(f"Merhaba, {user.mention}!\nUmarız iyisindir ve her şey yolundadır. Başvurunu inceledik fakat maalesef aşağıdaki nedenden dolayı kabul edemiyoruz.\n```{self.info1.value}```\nEğer formu buna dikkat ederek yeniden doldurursan en kısa sürede başvurunu tekrar inceleyip seni onaylayabiliriz.\nAyrıca eğer bir problemle karşılaşırsan direktörler ile iletişime geçebilirsin. <:A_logo_unog:945028420977455157> 💙")
+
 class OnayFormuModal(Modal):
     title = "📝 Onaylanma Formu"
 
@@ -177,8 +230,8 @@ class OnayFormuModal(Modal):
         buton1 =   Button(style=discord.ButtonStyle.green, label="Onayla", custom_id="onayla")
         buton2 =   Button(style=discord.ButtonStyle.red, label="Reddet", custom_id="reddet")
         view = View(timeout=None)
-        buton1.callback = basvuru_onayla
-        buton2.callback = basvuru_reddet
+        buton1.callback = approve_verification
+        buton2.callback = deny_verification
         view.add_item(buton1)
         view.add_item(buton2)
         await channel.send(embed=embed, view=view)
@@ -205,7 +258,6 @@ class GiveSelect(RoleSelect):
         roles.upsert({'guild': interaction.guild.id, 'role': self.values[0].id, 'role_name': self.values[0].name}, Query().role == self.values[0].id)
         await interaction.response.send_message(f"Rol Eklendi: <@&{self.values[0].id}>", ephemeral=True, delete_after=10)
         
-
 class TakeSelect(RoleSelect):
     async def callback(self, interaction: discord.Interaction):
         db = TinyDB(DB_NAME)
@@ -256,7 +308,9 @@ class NewUserMessageSelect(Modal):
         message.upsert({'guild': interaction.guild.id, 'message': self.message.value}, Query().guild == interaction.guild.id)
         await interaction.response.send_message(f"Mesaj ayarlandı.\n\n{self.message.value}", ephemeral=True, delete_after=180)
 
-async def yenikullanici(interaction):
+# endregion
+
+async def newuser(interaction : discord.Interaction):
     if not is_user_admin(interaction.user):
         await interaction.response.send_message("Bu işlemi yapmaya yetkiniz yok.", ephemeral=True, delete_after=30)
         return
@@ -348,6 +402,8 @@ async def yenikullanici(interaction):
 
     await interaction.response.send_message("", ephemeral=True, delete_after=180, embed=embed,  view=view)
 
+#region CONDITIONCHECKS
+
 def is_user_admin(user: discord.Member):
     if user.id == AKDENIZ_USERID or user.id == KHANO_USERID:
         return True
@@ -363,8 +419,29 @@ def is_user_approver(user: discord.Member):
         return True
     return False
 
+# endregion
+
+# region COMMANDS
+
+@client.command(name="rf")
+async def tree(ctx: Context):
+    if(is_user_admin(ctx.author)):
+        print("tree command has run")
+        guild = discord.Object(id=SERVER_ID)
+        await client.tree.sync(guild=guild)
+    else:
+        await reply_no_permission(ctx)
+
+@client.command()
+async def dbjson(ctx : Context):
+    if not is_user_admin(ctx.author):
+        await reply_no_permission(ctx)
+        return
+    file = discord.File("members.json")
+    await ctx.send(file=file)
+
 @client.hybrid_command(name="settings", with_app_command=True, description="Bot ayarları.")
-async def settings(ctx):
+async def settings(ctx : Context):
     if not is_user_admin(ctx.author):
         await ctx.reply('Bu komutu kullanmaya yetkiniz yok.', ephemeral=True, delete_after=30)
         return
@@ -454,7 +531,7 @@ async def settings(ctx):
     button4.callback = kanal_sil
     button5.callback = take_sil
     button6.callback = give_sil
-    button7.callback = yenikullanici
+    button7.callback = newuser
     button8.callback = approveRole
     
 
@@ -469,8 +546,8 @@ async def settings(ctx):
     
     await ctx.reply("", view=view, embed=embed, ephemeral=True, delete_after=180)
 
-@client.hybrid_command(name="refresh", with_app_command=True, description="Butonu yeniler.")
-async def refresh(ctx):
+@client.hybrid_command(name="refresh", with_app_command=True, description="Bütün butonları yeniler.")
+async def refresh(ctx : Context):
     if not is_user_admin(ctx.author):
         await ctx.reply('Bu komutu kullanmaya yetkiniz yok.', ephemeral=True, delete_after=30)
         return
@@ -480,7 +557,7 @@ async def refresh(ctx):
     await ctx.reply('Butonlar yenilendi.', ephemeral=True, delete_after=30)
 
 @client.hybrid_command(name="excell", with_app_command=True, description="Üyeleri excele döker.")
-async def excell(ctx):
+async def excell(ctx : Context):
     if not is_user_admin(ctx.author):
         await ctx.reply('Bu komutu kullanmaya yetkiniz yok.', ephemeral=True, delete_after=30)
         return
@@ -501,16 +578,19 @@ async def excell(ctx):
 
     await ctx.reply('Excell dosyası oluşturuldu.', ephemeral=True, delete_after=180, file=attach)
 
-@client.hybrid_command(name="jamyarat", with_app_command=True, description="Yeni bir jam oluşturur.")
-async def jamyarat(ctx, JamAdı:str,TakımSayısı:int):
-    guild : discord.Guild = ctx.guild
-    await guild.create_category(JamAdı)
-    ctx.reply("Jam adı: " + JamAdı + " başarıyla yaratıldı.",ephemeral=True, delete_after=30)
-
+@client.hybrid_command(name="jamyarat", description="Yeni bir jam oluşturur.")
+@discord.app_commands.describe(jam_adı= "Her yerde bu yazıcaktır.")
+async def jam_create(interaction: Context, jam_adı:str):
+    guild : discord.Guild = interaction.guild
+    category : discord.CategoryChannel= await guild.create_category(jam_adı)
+    await guild.create_voice_channel(name="Genel Sohbet",category=category)
+    await guild.create_text_channel(str.lower(jam_adı).replace(" ","-"),category=category)
+    await guild.create_role(name=jam_adı+ " Katılımcısı")
+    await interaction.reply("Jam: **" + jam_adı + "** başarıyla yaratıldı.\n Bilgi: Otomatik oluşturulan rolü sonradan ayarlayabilirsiniz ancak id numarası değişeceği için rolü komple değiştirmemelisiniz. (silip yenisini oluşturmak)",ephemeral=True, delete_after=30)
 
 @client.hybrid_command(name="onayla", with_app_command=True, description="Kullanıcıyı manuel onaylar.")
 @discord.app_commands.describe(user = "id veya etiket", role = "id veya etiket")
-async def onayla_m(ctx, user: discord.Member, role: discord.Role = None, username: str = None):
+async def onayla_m(ctx : Context, user: discord.Member, role: discord.Role = None, username: str = None):
     if not is_user_approver(ctx.author):
         await ctx.reply('Bu komutu kullanmaya yetkiniz yok.', ephemeral=True, delete_after=30)
         return
@@ -528,12 +608,11 @@ async def onayla_m(ctx, user: discord.Member, role: discord.Role = None, usernam
 
     await ctx.reply(embed=embed)
 
-    await send_message(ctx.guild, user)
-
+    await welcome_user(ctx.guild, user)
 
 @client.hybrid_command(name="buton_yarat", with_app_command=True, description="Girilen kanalda kayıt butonu oluşturur.")
 @discord.app_commands.describe(description="Mesaj için metin girin.")
-async def buton_yarat(ctx, description: str = None):
+async def buton_yarat(ctx : Context, description: str = None):
     if not is_user_admin(ctx.author):
         await ctx.reply('Bu komutu kullanmaya yetkiniz yok.', ephemeral=True, delete_after=30)
         return
@@ -573,68 +652,170 @@ async def buton_yarat(ctx, description: str = None):
 
     await ctx.reply('Buton oluşturuldu.', ephemeral=True, delete_after=30)
 
+# endregion
 
-async def send_message(guild, member):
-    db = TinyDB(DB_NAME)
-    newuserchannel = db.table('newuserchannel')
-    newuserchannel = newuserchannel.search(Query().guild == guild.id)
-    if newuserchannel:
-        channel = guild.get_channel(newuserchannel[0]['channel'])
-        if not channel:
+@tasks.loop(hours=1)
+async def actives():
+    view = View(timeout=None)
+    button1 =   Button(style=discord.ButtonStyle.primary, label="Onay Talebi İçin Tıkla!", custom_id="modal")
+
+    async def send_modal(interaction):
+        db = TinyDB(DB_NAME)
+        roles = db.table(GIVE_TABLE)
+        roles = roles.search(Query().guild == interaction.guild.id)
+        for role in roles:
+            if interaction.user.guild.get_role(role['role']) in interaction.user.roles:
+                await interaction.response.send_message("Zaten Kayıtlısın.", ephemeral=True, delete_after=10)
+                return
+        await interaction.response.send_modal(OnayFormuModal())
+    
+    button1.callback = send_modal
+    view.add_item(button1)
+    client.add_view(view=view)
+
+    buton1 =   Button(style=discord.ButtonStyle.green, label="Onayla", custom_id="onayla")
+    buton2 =   Button(style=discord.ButtonStyle.red, label="Reddet", custom_id="reddet")
+    view = View(timeout=None)
+    buton1.callback = approve_verification
+    buton2.callback = deny_verification
+    view.add_item(buton1)
+    view.add_item(buton2)
+
+    client.add_view(view=view)
+    print("Actives added")
+
+# region EVENTS
+@client.event
+async def on_ready(): 
+    print(f'{client.user} is connected')
+
+    actives.start()
+    try:
+        #guild = discord.Object(id=SERVER_ID)
+        await client.tree.sync()
+        print('command sync is complete')
+    except Exception as e:
+        print(e)
+ 
+@client.event
+async def on_message(msg):
+    if msg.guild is None:
+        return
+    if msg.content.startswith('!developermod'):
+        if not is_user_admin(msg.author):
             return
-        message = db.table('newusermessage')
-        message = message.search(Query().guild == guild.id)
-        if message:
-            message = message[0]['message']
-            if "%split%" in message:
-                listelen = message.split("%split%")
-                message = choice(listelen)
-            if "%user%" in message:
-                message = message.replace("%user%", f"{member.nick}")
-            if "\>" in message:
-                message = message.replace("\<", f"<")
-            embed = discord.Embed(title="ÜNOG'a Hoş Geldin!", description=message, color=choice(colors))
-            embed.set_thumbnail(url=member.avatar)
-            msg = await channel.send("", embed=embed)
-            emojilist = [
-            "👋", "🎉", "✨", "🎊", "🌟", "🚀", "🎈", "✅", "🪄",
-            "🌠", "🔥","💫", "💎",
-            "🎶", "📣", "⚡", "🌅", "🥳","🎮","🕹️", "💻",  
-            "🖥️", "🏞️", "💾"
-            ]
-            emojiname = [
-                "Welcome", 
-                "ZoeWelcome", 
-                "blushie", 
-                "bnhatodorokidab", 
-                "ere", 
-                "hello", 
-                "hellothere", 
-                "hellothere1", 
-                "sailor_mercury", 
-                "watamee", 
-                "welcomehat", 
-                "PepeWelcome", 
-                "EN_Pretty", 
-                "EN_neko_expect", 
-                "EN_cat_mustache46", 
-                "A_logo_unog", 
-                "E_VoHiYo",
-                "YoureWelcome", 
-                "kanna_oh_welcome", 
-                "blue_welcome", 
-                "Iruma_wiggle_dizzy_dance", 
-                "cute2", 
-                "welcomea", 
-                "welcometohell", 
-                "kawaiiwave", 
-                "3GMAROC", 
-                "E_Excited", 
-                "E_CuteTakingNotes", 
-                "E_cuteDog"
-            ]
-            emoji = discord.utils.get(guild.emojis, name=choice(emojiname))
-            await msg.add_reaction(choice((choice(emojilist), emoji)))
+        if msg.author.id != AKDENIZ_USERID or msg.author.id != KHANO_USERID: 
+            return
+        role = msg.guild.get_role(603961647127592980) 
+        if role in msg.author.roles:
+            await msg.author.remove_roles(role)
+            await msg.channel.send("Developer modu kapatıldı.")
+        else:
+            await msg.author.add_roles(role)
+            await msg.channel.send("Developer modu açıldı.")
+
+
+    if msg.content.startswith('!komuttest3'):
+        if not is_user_admin(msg.author):
+            return
+        user = msg.guild.get_member(AKDENIZ_USERID)
+        await welcome_user(msg.guild, user)
+
+    if msg.content.startswith('!testwelcome'):
+        if not is_user_admin(msg.author):
+            return
+        await send_welcome_message_test(msg.guild, msg.channel, msg.author)
+
+
+    if msg.content.startswith('!komuttest1'):
+        if not is_user_admin(msg.author):
+            return
+        user = msg.guild.get_member(AKDENIZ_USERID)
+        await user.remove_roles(msg.guild.get_role(1330931358628974642))
+        await msg.channel.send("Rol alındı.")
+
+    if msg.content.startswith('!komuttestriskli'):
+        if not is_user_admin(msg.author):
+            return
+        # veritabanindaki kullancilarin hepsine rol ata
+        db = TinyDB(DB_NAME)
+        members = db.table(MEMBER_TABLE)
+        members = members.all()
+        role = msg.guild.get_role(1330931358628974642) #onayli uye rolu
+        i = 0
+        for member in members:
+            i+=1
+            if i < 1500:
+                print("continue " + str(i))
+                continue
+            memberdb = member
+            member = msg.guild.get_member(memberdb['id'])
+            if member:
+                try:
+                    await member.edit(nick=memberdb['name'].title())
+                    await member.add_roles(role)
+                    print(f"{member} isimli kullanıcıya {role} rolü verildi.")
+                except Exception as e:
+                    print(f"{member} isimli kullanıcıya rol verilemedi.")
+                    print(e)
+            else:
+                print(f"{member} isimli kullanıcı bulunamadı.")
+    
+    await client.process_commands(msg)
+    return
+
+@client.event
+async def on_member_join(member):
+    db = TinyDB(DB_NAME)
+    newuser = db.table('newuser')
+    newuser = newuser.search(Query().guild == member.guild.id)
+    if newuser:
+        for role in newuser:
+            await member.add_roles(member.guild.get_role(role['role']))
+
+@client.event
+async def on_member_remove(member):
+    db = TinyDB(DB_NAME)
+    members = db.table(MEMBER_TABLE)
+    members.update({'inserver': 'no'}, Query().id == member.id)
+
+@client.event
+async def on_raw_reaction_add(payload):
+    if payload.message_id == 1336052031122575532:
+        guild = client.get_guild(payload.guild_id)
+        if str(payload.emoji) == "👾":
+            role = guild.get_role(1330930413992149103)
+            await guild.get_member(payload.user_id).add_roles(role)
+        if str(payload.emoji) == "🦇":
+            role = guild.get_role(1330930595127234580)
+            await guild.get_member(payload.user_id).add_roles(role)
+        if str(payload.emoji) == "🔶":
+            role = guild.get_role(1330930551032512534)
+            await guild.get_member(payload.user_id).add_roles(role)
+        if str(payload.emoji) == "🔔":
+            role = guild.get_role(1332676715104833596)
+            await guild.get_member(payload.user_id).add_roles(role)
+
+@client.event
+async def on_raw_reaction_remove(payload):
+    if payload.message_id == 1336052031122575532:
+        guild = client.get_guild(payload.guild_id)
+        if str(payload.emoji) == "👾":
+            role = guild.get_role(1330930413992149103)
+            await guild.get_member(payload.user_id).remove_roles(role)
+        if str(payload.emoji) == "🦇":
+            role = guild.get_role(1330930595127234580)
+            await guild.get_member(payload.user_id).remove_roles(role)
+        if str(payload.emoji) == "🔶":
+            role = guild.get_role(1330930551032512534)
+            await guild.get_member(payload.user_id).remove_roles(role)
+        if str(payload.emoji) == "🔔":
+            role = guild.get_role(1332676715104833596)
+            await guild.get_member(payload.user_id).remove_roles(role)
+
+# endregion 
+
+# region TESTS
 
 async def send_welcome_message_test(guild, channel, member):
     db = TinyDB(DB_NAME)
@@ -692,152 +873,6 @@ async def send_welcome_message_test(guild, channel, member):
         emoji = discord.utils.get(guild.emojis, name=choice(emojiname))
         await msg.add_reaction(choice((choice(emojilist), emoji)))
 
-@tasks.loop(hours=1)
-async def actives():
-    view = View(timeout=None)
-    button1 =   Button(style=discord.ButtonStyle.primary, label="Onay Talebi İçin Tıkla!", custom_id="modal")
-
-    async def send_modal(interaction):
-        db = TinyDB(DB_NAME)
-        roles = db.table(GIVE_TABLE)
-        roles = roles.search(Query().guild == interaction.guild.id)
-        for role in roles:
-            if interaction.user.guild.get_role(role['role']) in interaction.user.roles:
-                await interaction.response.send_message("Zaten Kayıtlısın.", ephemeral=True, delete_after=10)
-                return
-        await interaction.response.send_modal(OnayFormuModal())
-    
-    button1.callback = send_modal
-    view.add_item(button1)
-    client.add_view(view=view)
-
-    buton1 =   Button(style=discord.ButtonStyle.green, label="Onayla", custom_id="onayla")
-    buton2 =   Button(style=discord.ButtonStyle.red, label="Reddet", custom_id="reddet")
-    view = View(timeout=None)
-    buton1.callback = basvuru_onayla
-    buton2.callback = basvuru_reddet
-    view.add_item(buton1)
-    view.add_item(buton2)
-
-    client.add_view(view=view)
-    print("Actives added")
-
-#events
-@client.event
-async def on_message(msg):
-    if msg.guild is None:
-        return
-    if msg.content.startswith('!developermod'):
-        if not is_user_admin(msg.author):
-            return
-        if msg.author.id != AKDENIZ_USERID or msg.author.id != KHANO_USERID: 
-            return
-        role = msg.guild.get_role(603961647127592980) 
-        if role in msg.author.roles:
-            await msg.author.remove_roles(role)
-            await msg.channel.send("Developer modu kapatıldı.")
-        else:
-            await msg.author.add_roles(role)
-            await msg.channel.send("Developer modu açıldı.")
-
-
-    if msg.content.startswith('!komuttest3'):
-        if not is_user_admin(msg.author):
-            return
-        user = msg.guild.get_member(AKDENIZ_USERID)
-        await send_message(msg.guild, user)
-
-    if msg.content.startswith('!testwelcome'):
-        if not is_user_admin(msg.author):
-            return
-        await send_welcome_message_test(msg.guild, msg.channel, msg.author)
-
-
-    if msg.content.startswith('!komuttest1'):
-        if not is_user_admin(msg.author):
-            return
-        user = msg.guild.get_member(AKDENIZ_USERID)
-        await user.remove_roles(msg.guild.get_role(1330931358628974642))
-        await msg.channel.send("Rol alındı.")
-
-    if msg.content.startswith('!komuttestriskli'):
-        if not is_user_admin(msg.author):
-            return
-        # veritabanindaki kullancilarin hepsine rol ata
-        db = TinyDB(DB_NAME)
-        members = db.table(MEMBER_TABLE)
-        members = members.all()
-        role = msg.guild.get_role(1330931358628974642) #onayli uye rolu
-        i = 0
-        for member in members:
-            i+=1
-            if i < 1500:
-                print("continue " + str(i))
-                continue
-            memberdb = member
-            member = msg.guild.get_member(memberdb['id'])
-            if member:
-                try:
-                    await member.edit(nick=memberdb['name'].title())
-                    await member.add_roles(role)
-                    print(f"{member} isimli kullanıcıya {role} rolü verildi.")
-                except Exception as e:
-                    print(f"{member} isimli kullanıcıya rol verilemedi.")
-                    print(e)
-            else:
-                print(f"{member} isimli kullanıcı bulunamadı.")
-
-    return
-
-@client.event
-async def on_member_join(member):
-    db = TinyDB(DB_NAME)
-    newuser = db.table('newuser')
-    newuser = newuser.search(Query().guild == member.guild.id)
-    if newuser:
-        for role in newuser:
-            await member.add_roles(member.guild.get_role(role['role']))
-
-@client.event
-async def on_member_remove(member):
-    db = TinyDB(DB_NAME)
-    members = db.table(MEMBER_TABLE)
-    members.update({'inserver': 'no'}, Query().id == member.id)
-
-@client.event
-async def on_raw_reaction_add(payload):
-    if payload.message_id == 1336052031122575532:
-        guild = client.get_guild(payload.guild_id)
-        if str(payload.emoji) == "👾":
-            role = guild.get_role(1330930413992149103)
-            await guild.get_member(payload.user_id).add_roles(role)
-        if str(payload.emoji) == "🦇":
-            role = guild.get_role(1330930595127234580)
-            await guild.get_member(payload.user_id).add_roles(role)
-        if str(payload.emoji) == "🔶":
-            role = guild.get_role(1330930551032512534)
-            await guild.get_member(payload.user_id).add_roles(role)
-        if str(payload.emoji) == "🔔":
-            role = guild.get_role(1332676715104833596)
-            await guild.get_member(payload.user_id).add_roles(role)
-
-@client.event
-async def on_raw_reaction_remove(payload):
-    if payload.message_id == 1336052031122575532:
-        guild = client.get_guild(payload.guild_id)
-        if str(payload.emoji) == "👾":
-            role = guild.get_role(1330930413992149103)
-            await guild.get_member(payload.user_id).remove_roles(role)
-        if str(payload.emoji) == "🦇":
-            role = guild.get_role(1330930595127234580)
-            await guild.get_member(payload.user_id).remove_roles(role)
-        if str(payload.emoji) == "🔶":
-            role = guild.get_role(1330930551032512534)
-            await guild.get_member(payload.user_id).remove_roles(role)
-        if str(payload.emoji) == "🔔":
-            role = guild.get_role(1332676715104833596)
-            await guild.get_member(payload.user_id).remove_roles(role)
-
-        
+# endregion
 
 client.run(BOT_TOKEN)
