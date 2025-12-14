@@ -1,4 +1,5 @@
 import os
+import re
 from dotenv import load_dotenv
 import discord 
 from discord.ui import Modal, TextInput, View, Button, ChannelSelect, RoleSelect
@@ -26,6 +27,8 @@ KHANO_USERID = 222094201356025857
 AKDENIZ_USERID = 385887296555319296
 
 client = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+
+regex = re.compile(r'(^|\s)lan[.!?]?$', re.IGNORECASE)
 
 # region ACTIONS
 
@@ -760,6 +763,9 @@ async def on_message(msg):
                     print(e)
             else:
                 print(f"{member} isimli kullanıcı bulunamadı.")
+
+    if regex.search(msg.content):
+        await msg.reply("-# lan mı")
     
     await client.process_commands(msg)
     return
