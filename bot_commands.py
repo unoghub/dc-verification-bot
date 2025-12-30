@@ -17,20 +17,7 @@ from bot_events import actives
 
 def setup_commands(bot_instance: Bot):
 
-
-    @bot_instance.command(name="yenile_komutlar")
-    async def refresh_commands(ctx: Context):
-        """Refreshes the commands in the server"""
-        print("yenileme")
-        if (is_user_admin(ctx.author)):
-            await bot_instance.tree.sync(guild=Object(id=bot_globals.SERVERID_UNOG))
-        else:
-            await reply_no_permission(ctx)
-
-
-
-    @bot_instance.command(name="indir_veritabanı")
-    @has_any_role(bot_globals.ROLEID_DIRECTOR)
+    @bot_instance.tree.command(name="indir_veritabanı",guild=bot_globals.GUILD_UNOG,description="ÜNOG Veritabanını JSON olarak indirir ve günceller.")
     async def dbjson(ctx: Context):
         if not is_user_admin(ctx.author):
             await reply_no_permission(ctx)
@@ -41,7 +28,7 @@ def setup_commands(bot_instance: Bot):
 
 
 
-    @bot_instance.hybrid_command(name="ayarlar", with_app_command=True, description="Bot ayarları.")
+    @bot_instance.tree.command(name="ayarlar",description="Bot ayarları panelini aç.",guild=bot_globals.GUILD_UNOG)
     async def botSettings(ctx: Context):
 
         if not is_user_admin(ctx.author):
@@ -205,7 +192,7 @@ def setup_commands(bot_instance: Bot):
         await ctx.reply("", view=view, embed=embed, ephemeral=True, delete_after=180)
 
 
-    @bot_instance.hybrid_command(name="butonları_yenile", with_app_command=True, description="Aktif butonları yeniler.")
+    @bot_instance.tree.command(name="butonları_yenile", description="Aktif butonları yeniler.",guild=bot_globals.GUILD_UNOG)
     async def refresh_active_buttons(ctx: Context):
         if not is_user_admin(ctx.author):
             await reply_no_permission(ctx)
@@ -215,7 +202,7 @@ def setup_commands(bot_instance: Bot):
         await ctx.reply('Butonlar yenilendi.', ephemeral=True, delete_after=30)
 
 
-    @bot_instance.hybrid_command(name="excell", with_app_command=True, description="Üyeleri excele döker/günceller.")
+    @bot_instance.tree.command(name="excell", description="ÜNOG veritabanını excel dosyası olarak çıkarır ve günceller.",guild=bot_globals.GUILD_UNOG)
     async def excell(ctx: Context):
 
         if not is_user_admin(ctx.author):
@@ -242,7 +229,7 @@ def setup_commands(bot_instance: Bot):
         await ctx.reply('Excell dosyası oluşturuldu/güncellendi.', ephemeral=True, delete_after=180, file=attach)
 
 
-    @bot_instance.hybrid_command(name="jamyarat", description="Yeni bir jam oluşturur.")
+    @bot_instance.tree.command(name="jamyarat", description="Yeni bir jam oluştur.",guild=bot_globals.GUILD_UNOG)
     @discord.app_commands.describe(jam_adı="Her yerde bu yazıcaktır.")
     async def jam_create(interaction: Context, jam_adı: str):
         guild: Guild = interaction.guild
@@ -255,9 +242,9 @@ def setup_commands(bot_instance: Bot):
             ephemeral=True, delete_after=30)
 
 
-    @bot_instance.hybrid_command(name="jam_takımları_kur", description="Jam takımlarını oluşturur.")
-    @discord.app_commands.describe(category="Jam'in bulunduğu kategori", teams=".csv formatında takımların dosyası")
-    async def jam_set_teams(ctx: Context, category: discord.CategoryChannel, teams: Attachment):
+    @bot_instance.tree.command(name="jam_takımları_kur", description="Jam takımlarını oluştur.",guild=bot_globals.GUILD_UNOG)
+    @discord.app_commands.describe(category="Jam'in bulunduğu Kategori Kanalı", teams=".csv formatında takımların dosyası")
+    async def jam_set_teams(ctx: Context, category: CategoryChannel, teams: Attachment):
         file_bytes = await teams.read()
         data = json.loads(file_bytes.decode("utf-8"))
         if isinstance(data, dict):
@@ -267,22 +254,30 @@ def setup_commands(bot_instance: Bot):
         await ctx.reply("Takımlar başarıyla oluşturuldu.", ephemeral=True, delete_after=30)
 
 
-    @bot_instance.hybrid_command(name="onayla", with_app_command=True, description="Kullanıcıyı manuel onaylar.")
-    @discord.app_commands.describe(user="id veya etiket", role="id veya etiket")
-    async def onayla_m(ctx: Context, user: Member, role: Role = None, username: str = None):
+    @bot_instance.tree.command(name="onayla", description="Kullanıcıyı manuel onaylar.", guild=bot_globals.GUILD_UNOG)
+    @discord.app_commands.describe(user="Onaylanan kullanıcı",usernick="Yeni İsmi")
+    async def approve_manually(ctx: Context, user: Member,usernick : str):
 
         if not is_user_approver(ctx.author):
             await reply_no_permission(ctx)
             return
         
-        if role:
-            await user.add_roles(role)
-        if username:
-            await user.edit(nick=username)
+        IsUserMember : bool = False
+        for i in user.roles:
+            if i.id == bot_globals.ROLEID_MEMBER:
+                IsUserMember = True
+
+        if not IsUserMember:
+            await user.add_roles(bot_globals.ROLEID_MEMBER)
+            if usernick:
+                await user.edit(nick=usernick)
+        else:
+            ctx.reply("Kullanıcı zaten onaylı",ephemeral=True,delete_after=30)
+            return
 
         bot_globals.TABLE_MEMBERS.update({'inserver': 'yes'}, Query().id == user.id)
 
-        embed = discord.Embed(title=f"Onaylandı!", color=choice(bot_globals.COLORS_UNOG))
+        embed = Embed(title=f"Onaylandı!", color=choice(bot_globals.COLORS_UNOG))
         embed.add_field(name="\u200b", value=f"<@{user.id}>", inline=False)
         embed.set_thumbnail(url=user.avatar)
 
@@ -291,7 +286,7 @@ def setup_commands(bot_instance: Bot):
         await welcome_member_message(ctx.guild, user)
 
 
-    @bot_instance.hybrid_command(name="onay_kayıt_butonu_yarat", with_app_command=True, description="Girilen kanalda onay kayıt butonu oluşturur.")
+    @bot_instance.tree.command(name="onay_kayıt_butonu_yarat", description="Girilen kanalda onay kayıt butonu oluşturur.",guild=bot_globals.GUILD_UNOG)
     @discord.app_commands.describe(description="Mesaj için metin girin.")
     async def create_verification_application_button(ctx: Context, description: str = None):
         
@@ -319,3 +314,6 @@ def setup_commands(bot_instance: Bot):
         view.add_item(button1)
 
         message = await ctx.channel.send(description, view=view)
+
+        
+

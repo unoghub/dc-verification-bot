@@ -1,4 +1,4 @@
-from discord import Guild, Intents
+from discord import Intents
 from discord.ext.commands import Bot
 
 from bot_events import setup_events
@@ -7,7 +7,7 @@ import bot_globals
 
 bot_globals.UnogBot = Bot(command_prefix="!", intents=Intents.all())
 
-setup_events()
 setup_commands(bot_globals.UnogBot)
+setup_events()
 
 bot_globals.UnogBot.run(bot_globals.BOT_TOKEN)
