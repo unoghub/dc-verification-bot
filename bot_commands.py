@@ -1,8 +1,8 @@
 import discord
 import json
 from random import choice
-from discord.ui import View
-from discord import Embed,File,Attachment,ButtonStyle,Interaction,Button,Member,Role,Guild,CategoryChannel,Object
+from discord.ui import View,Button
+from discord import Embed,File,Attachment,ButtonStyle,Interaction,Member,Role,Guild,CategoryChannel,Object
 from discord.ext.commands import Context,Bot
 from openpyxl import Workbook
 from tinydb import Query
@@ -29,10 +29,10 @@ def setup_commands(bot_instance: Bot):
 
 
     @bot_instance.tree.command(name="ayarlar",description="Bot ayarları panelini aç.",guild=bot_globals.GUILD_UNOG)
-    async def botSettings(ctx: Context):
+    async def botSettings(interctn: Interaction):
 
-        if not is_user_admin(ctx.author):
-            await reply_no_permission(ctx)
+        if not is_user_admin(interctn.user):
+            await reply_no_permission(interctn.context)
             return
 
         embed = Embed(title="Bot Ayarları", description="Onaylama kanalı seçin.", color=choice(bot_globals.COLORS_UNOG))
@@ -167,29 +167,28 @@ def setup_commands(bot_instance: Bot):
 """
         
         view = View()
-        button1 = Button(style=ButtonStyle.primary, label="Kanal seç", custom_id="channel")
-        button3 = Button(style=ButtonStyle.green, label="Verilecek rolleri seç", custom_id="give")
+        button1 = Button(style=ButtonStyle.primary, label="Onay Başvurusu Kanalını Düzenle", custom_id="channel")
+        button8 = Button(style=ButtonStyle.primary, label="Alım Sorumlusu Rolünü Düzenle", custom_id="approveRole")
+        button3 = Button(style=ButtonStyle.green, label="Onaylı Rolünü Düzenle", custom_id="give",row=1)
+        button6 = Button(style=ButtonStyle.grey, label="Onaylı Rolünü Sıfırla", custom_id="givedel", row=1)
         #button4 = Button(style=ButtonStyle.grey, label="Kanalı Sıfırla", custom_id="channeldel", row=1)
-        button5 = Button(style=ButtonStyle.grey, label="Alınacak rolleri Sıfırla", custom_id="takedel", row=1)
-        button6 = Button(style=ButtonStyle.grey, label="Verilecek rolleri Sıfırla", custom_id="givedel", row=1)
         #button7 = Button(style=ButtonStyle.primary, label="Yeni Kullanıcı Ayarları", custom_id="excell", row=2)
-        button8 = Button(style=ButtonStyle.primary, label="Alım Sorumlusu Rolünü Ayarla", custom_id="approveRole",row=3)
 
         button1.callback = select_approval_channel
         button3.callback = set_member_role
         button6.callback = reset_member_role
-        #button7.callback = newuser
         button8.callback = set_approver_role
+        #button7.callback = newuser
 
         view.add_item(button1)
         view.add_item(button3)
         #view.add_item(button4)
-        view.add_item(button5)
+        #view.add_item(button5)
         view.add_item(button6)
         #view.add_item(button7)
         view.add_item(button8)
 
-        await ctx.reply("", view=view, embed=embed, ephemeral=True, delete_after=180)
+        await interctn.response.send_message("", view=view, embed=embed, ephemeral=True, delete_after=180)
 
 
     @bot_instance.tree.command(name="butonları_yenile", description="Aktif butonları yeniler.",guild=bot_globals.GUILD_UNOG)
