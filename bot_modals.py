@@ -35,7 +35,6 @@ class DenyVerificationModal(Modal):
             await self.maininte.message.edit(view=view)
         await user.send(f"Merhaba, {user.mention}!\nUmarız iyisindir ve her şey yolundadır. Başvurunu inceledik fakat maalesef aşağıdaki nedenden dolayı kabul edemiyoruz.\n```{self.info1.value}```\nEğer formu buna dikkat ederek yeniden doldurursan en kısa sürede başvurunu tekrar inceleyip seni onaylayabiliriz.\nAyrıca eğer bir problemle karşılaşırsan direktörler ile iletişime geçebilirsin. <:A_logo_unog:945028420977455157> 💙")
 
-
 class ApprovalModal(Modal):
     _approveCallback : Callable[[Interaction],None] = None
     _denyCallback : Callable[[Interaction],None] = None
@@ -83,8 +82,7 @@ class ApprovalModal(Modal):
         view.add_item(buton2)
         await approvalChannel.send(embed=embed, view=view)
 
-
-class ApprovalChannelSelect(ChannelSelect):
+class VerificationPanelChannelSelect(ChannelSelect):
     def __init__(self):
         options = [ChannelType.text]
         super().__init__(channel_types=options)
@@ -93,6 +91,21 @@ class ApprovalChannelSelect(ChannelSelect):
         bot_globals.TEXTCHANNELID_VERIFICATION_PANEL = self.values[0].id
         await interaction.response.send_message(f"Kanal seçildi. <#{bot_globals.TEXTCHANNELID_VERIFICATION_PANEL}>", ephemeral=True, delete_after=10)
 
+class VerificationChannelSelect(ChannelSelect):
+    def __init__(self):
+        options = [ChannelType.text]
+        super().__init__(channel_types=options)
+    async def callback(self, interaction: Interaction):
+        bot_globals.TEXTCHANNELID_VERIFICATION = self.values[0].id
+        await interaction.response.send_message(f"Kanal seçildi. <#{bot_globals.TEXTCHANNELID_VERIFICATION}>", ephemeral=True, delete_after=10)
+
+class WelcomeChannelSelect(ChannelSelect):
+    def __init__(self):
+        options = [ChannelType.text]
+        super().__init__(channel_types=options)
+    async def callback(self, interaction: Interaction):
+        bot_globals.TEXTCHANNELID_WELCOME = self.values[0].id
+        await interaction.response.send_message(f"Kanal seçildi. <#{bot_globals.TEXTCHANNELID_WELCOME}>", ephemeral=True, delete_after=10)
 
 class MemberRoleSelect(RoleSelect):
     async def callback(self, interaction: Interaction):
@@ -102,17 +115,6 @@ class MemberRoleSelect(RoleSelect):
             return
         bot_globals.ROLEID_MEMBER = self.values[0].id
         await interaction.response.send_message(f"Rol Seçildi: <@&{self.values[0].id}>", ephemeral=True, delete_after=10)
-
-
-class NewUserSelect(RoleSelect):
-    async def callback(self, interaction: Interaction):
-        role = bot_globals.Server_Unog.get_role(self.values[0].id)
-        if role.is_bot_managed():
-            await interaction.response.send_message(f"Bu rol bir botun rolü!\nBot rolleri verilemez.", ephemeral=True, delete_after=10)
-            return
-        bot_globals.ROLEID_UNVERIFIED = self.values[0].id
-        await interaction.response.send_message(f"Yeni rol Seçildi: <@&{self.values[0].id}>", ephemeral=True, delete_after=10)
-
 
 class ApproverRoleSelect(RoleSelect):
     async def callback(self, interaction: Interaction):
@@ -125,13 +127,6 @@ class ApproverRoleSelect(RoleSelect):
             return
         bot_globals.ROLEID_APPROVER = self.values[0].id
         await interaction.response.send_message(f"Rol Eklendi: <@&{self.values[0].id}>", ephemeral=True, delete_after=10)
-
-
-class NewUserChannelSelect(ChannelSelect):
-    async def callback(self, interaction: Interaction):
-        bot_globals.TEXTCHANNELID_VERIFICATION_PANEL = self.values[0].id
-        await interaction.response.send_message(f"Kanal seçildi. <#{self.values[0].id}>", ephemeral=True, delete_after=10)
-
 
 class NewUserMessageSelect(Modal):
     title = "Yeni Kullanıcı Mesajı"

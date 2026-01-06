@@ -1,5 +1,6 @@
 from discord.ext.commands import Bot
 from discord import Member,Interaction,ButtonStyle,Guild,Object
+from discord.app_commands import AppCommandError,CheckFailure,MissingPermissions,MissingRole,MissingAnyRole
 from discord.ext import  tasks
 from discord.ui import View,Button
 from tinydb import  Query
@@ -30,55 +31,22 @@ def setup_events():
         except Exception as e:
             print(f'command sync fail:{e}')
 
-
+    @bot_globals.UnogBot.tree.error
+    async def on_command_error(interaction : Interaction, error):
+        tip = type(error)
+        if tip is MissingAnyRole:
+            await interaction.response.send_message(f"Bu komut için gereken rollerden birine sahip değilsiniz.",ephemeral=True,delete_after=30)
+        else:
+            print(error)
+        
     @bot_globals.UnogBot.event
     async def on_member_join(member : Member):
-        """Runs when a member is joined to server."""
         user = bot_globals.TABLE_MEMBERS.search(Query().id == member.id)
         if user: #member is in db
             if user['approved'] == True:
                 await member.add_roles(bot_globals.ROLEID_MEMBER)
         else: #new member is not in db,add a record
             bot_globals.TABLE_MEMBERS.insert({'id':member.id})
-            
-
-
-    @bot_globals.UnogBot.event
-    async def on_raw_reaction_add(payload):
-        """WIP"""
-        if payload.message_id == 1336052031122575532:
-            guild = bot_globals.UnogBot.get_guild(payload.guild_id)
-            if str(payload.emoji) == "👾":
-                role = guild.get_role(1330930413992149103)
-                await guild.get_member(payload.user_id).add_roles(role)
-            if str(payload.emoji) == "🦇":
-                role = guild.get_role(1330930595127234580)
-                await guild.get_member(payload.user_id).add_roles(role)
-            if str(payload.emoji) == "🔶":
-                role = guild.get_role(1330930551032512534)
-                await guild.get_member(payload.user_id).add_roles(role)
-            if str(payload.emoji) == "🔔":
-                role = guild.get_role(1332676715104833596)
-                await guild.get_member(payload.user_id).add_roles(role)
-
-    @bot_globals.UnogBot.event
-    async def on_raw_reaction_remove(payload):
-        """WIP"""
-        if payload.message_id == 1336052031122575532:
-            guild = bot_globals.UnogBot.get_guild(payload.guild_id)
-            if str(payload.emoji) == "👾":
-                role = guild.get_role(1330930413992149103)
-                await guild.get_member(payload.user_id).remove_roles(role)
-            if str(payload.emoji) == "🦇":
-                role = guild.get_role(1330930595127234580)
-                await guild.get_member(payload.user_id).remove_roles(role)
-            if str(payload.emoji) == "🔶":
-                role = guild.get_role(1330930551032512534)
-                await guild.get_member(payload.user_id).remove_roles(role)
-            if str(payload.emoji) == "🔔":
-                role = guild.get_role(1332676715104833596)
-                await guild.get_member(payload.user_id).remove_roles(role)
-
 
 @tasks.loop(hours=1)
 async def actives():
