@@ -12,7 +12,7 @@ from bot_modals import ApprovalModal,VerificationPanelChannelSelect,MemberRoleSe
 from discord.app_commands.checks import has_any_role,has_role
 from discord import app_commands
 from bot_actions import welcome_member_message
-from bot_exceptions import reply_no_permission,JamAlreadyContains
+from bot_exceptions import reply_no_permission,JamAlreadyContains,JamAlreadyParticipating,JamTeamAlreadyPresent,NoJamPresent,JamNotParticipating
 from bot_conditions import can_user_approve,can_user_moderate_jams,can_user_setup_bot,deneme
 from bot_events import actives
 
@@ -221,9 +221,10 @@ def setup_commands(bot_instance: Bot):
         bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.truncate()
         bot_globals.TABLE_JAM_CURRENT_TEAMS.truncate()
 
-        category: CategoryChannel = await guild.create_category(jam_kısa_adı)
-        voiceChannel = await guild.create_voice_channel(name=f"{jam_kısa_adı} Sohbet", category=category)
-        textChannel = await guild.create_text_channel(str.lower(f"{jam_kısa_adı} genel").replace(" ", "-"), category=category)
+        category: CategoryChannel = await guild.create_category(jam_kısa_adı.strip())
+        voiceChannel = await guild.create_voice_channel(name=f"{jam_kısa_adı.strip()} Sohbet", category=category)
+        textChannel = await guild.create_text_channel(str.lower(f"{jam_kısa_adı.strip()} genel").replace(" ", "-"), category=category)
+        
         jamRole : Role = await guild.create_role(name=jam_kısa_adı + " Jammer")
 
         bot_globals.TABLE_JAMS.insert({'shortName':jamName,
@@ -239,16 +240,61 @@ def setup_commands(bot_instance: Bot):
             "Jam: **" + jamFullname + "** başarıyla yaratıldı.",
             ephemeral=True, delete_after=30)
 
-    @bot_instance.tree.command(name="jam-ekip-kur", description="Bir jam ekibi oluşturur.",guild=bot_globals.GUILD_UNOG)
-    @discord.app_commands.describe(ekip_adi="Lideri olacağınız ekibinizin adı")
+    @bot_instance.tree.command(name="jam-katıl", description="Mevcut jame katılırsınız.",guild=bot_globals.GUILD_UNOG)
     @app_commands.checks.has_any_role(
+        bot_globals.ROLEID_MEMBER,
         bot_globals.ROLEID_BOTDEV,
         bot_globals.ROLEID_DIRECTOR,
-        bot_globals.ROLEID_JAM_MOD
+        bot_globals.ROLEID_JAM_MOD,
+        bot_globals.ROLEID_APPROVER
     )
-    async def jam_create_team(interaction : Interaction, ekip_adi : str):
-        return 
-        #bot_globals.TABLE
+    async def jam_join(interaction : Interaction):
+
+        currentJam = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
+        participantData = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.contains(Query().discordID == interaction.user.id)
+        jamParticipantRoleID : int = currentJam.participantRoleID
+
+        if not currentJam:
+            raise NoJamPresent()
+
+        elif participantData:
+            raise JamAlreadyParticipating()
+        
+        bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.insert({'discordID':interaction.user.id,'teamID':-1})
+        await interaction.user.add_roles(jamParticipantRoleID)
+
+    @bot_instance.tree.command(name="jam-takım-kur", description="Katıldığınız jamde ekip kurarsınız.",guild=bot_globals.GUILD_UNOG)
+    @discord.app_commands.describe(ekip_adi="Lideri olacağınız ekibinizin adı")
+    @app_commands.checks.has_any_role(
+        bot_globals.ROLEID_MEMBER,
+        bot_globals.ROLEID_BOTDEV,
+        bot_globals.ROLEID_DIRECTOR,
+        bot_globals.ROLEID_JAM_MOD,
+        bot_globals.ROLEID_APPROVER
+    )
+    async def jam_create_team(interaction : Interaction, ekip_adi : str ):
+
+        ekip_adi = ekip_adi.strip().lower()
+        currentJam = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
+        participantData = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.contains(Query().discordID == interaction.user.id)
+        teamData = bot_globals.TABLE_JAM_CURRENT_TEAMS.contains(Query().teamName == ekip_adi)
+
+        if not currentJam:
+            raise NoJamPresent()
+
+        elif not participantData:
+            raise JamNotParticipating()
+
+        elif teamData:
+            raise JamTeamAlreadyPresent()
+        
+        bot_globals.TABLE_JAM_CURRENT_TEAMS.insert({
+        'teamName': ekip_adi,
+        'gameURL': "",
+        'submitted': False,
+        'leader': interaction.user.id,
+        'members': []
+        })
 
     @bot_instance.tree.command(name="jam-takımları-kur", description="Jam takımlarını oluştur.",guild=bot_globals.GUILD_UNOG)
     @discord.app_commands.describe(category="Jam'in bulunduğu Kategori Kanalı", teams=".csv formatında takımların dosyası")

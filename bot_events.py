@@ -33,11 +33,7 @@ def setup_events():
 
     @bot_globals.UnogBot.tree.error
     async def on_command_error(interaction : Interaction, error):
-        tip = type(error)
-        if tip is MissingAnyRole:
-            await interaction.response.send_message(f"Bu komut için gereken rollerden birine sahip değilsiniz.",ephemeral=True,delete_after=30)
-        else:
-            print(error)
+        await interaction.response.send_message(error,ephemeral=True,delete_after=30)
         
     @bot_globals.UnogBot.event
     async def on_member_join(member : Member):
