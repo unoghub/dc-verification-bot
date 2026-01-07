@@ -39,10 +39,10 @@ class ApprovalModal(Modal):
     _approveCallback : Callable[[Interaction],None] = None
     _denyCallback : Callable[[Interaction],None] = None
 
-    def __init__(self, *, title = ..., timeout = None, custom_id = ...,approveCallback : Callable[[Interaction],None],denyCallback : Callable[[Interaction],None]):
-        super().__init__(title=title, timeout=timeout, custom_id=custom_id)
-        _approveCallback = approveCallback
-        _denyCallback = denyCallback
+    def __init__(self, *,timeout = None, approveCallback : Callable[[Interaction],None] = None,denyCallback : Callable[[Interaction],None] = None):
+        super().__init__(timeout=timeout)
+        self._approveCallback = approveCallback
+        self._denyCallback = denyCallback
 
     title = "📝 Onaylanma Formu"
 
@@ -55,9 +55,9 @@ class ApprovalModal(Modal):
     async def on_submit(self, interaction: Interaction):
 
         approvalChannel : TextChannel = bot_globals.Server_Unog.get_channel(bot_globals.TEXTCHANNELID_VERIFICATION_PANEL)
-        nameFormat : str = self.name.value.title()
+        nameFormat : str = self.name.value.strip().title()
         
-        bot_globals.TABLE_APPROVES.upsert({'name': nameFormat ,'email': self.email.value, 'birthday': self.birthday.value, 'info1': self.info1.value, 'info2': self.info2.value, 'inserver': 'no', 'memberinfo': 'no', 'id': interaction.user.id}, Query().id == interaction.user.id)
+        # bot_globals.TABLE_APPROVES.upsert({'name': nameFormat ,'email': self.email.value, 'birthday': self.birthday.value, 'info1': self.info1.value, 'info2': self.info2.value, 'inserver': 'no', 'memberinfo': 'no', 'id': interaction.user.id}, Query().id == interaction.user.id)
 
         embed = Embed(title="Talebiniz Alındı!", description="Yetkili tarafından onaylandığında rol ataması yapacağım!", color=choice(bot_globals.COLORS_UNOG))
 
@@ -71,7 +71,6 @@ class ApprovalModal(Modal):
         embed.add_field(name="Bulunduğunuz Kurum Veya Ekip", value=self.info1.value, inline=False)
         embed.add_field(name="ÜNOG'u Nasıl Keşfettiniz?", value=self.info2.value, inline=False)
         embed.set_thumbnail(url=interaction.user.avatar)
-
 
         buton1 =   Button(style=ButtonStyle.green, label="Onayla", custom_id="onayla")
         buton2 =   Button(style=ButtonStyle.red, label="Reddet", custom_id="reddet")

@@ -12,29 +12,20 @@ from bot_modals import ApprovalModal,VerificationPanelChannelSelect,MemberRoleSe
 from discord.app_commands.checks import has_any_role,has_role
 from discord import app_commands
 from bot_actions import welcome_member_message
-from bot_exceptions import reply_no_permission,JamAlreadyContains,JamAlreadyParticipating,JamTeamAlreadyPresent,NoJamPresent,JamNotParticipating
-from bot_conditions import can_user_approve,can_user_moderate_jams,can_user_setup_bot,deneme
+from bot_exceptions import reply_no_permission,JamAlreadyPresent,JamAlreadyParticipating,JamTeamAlreadyPresent,NoJamPresent,JamNotParticipating
+from bot_conditions import check_is_approver,check_is_jam_mod,check_is_botdev,check_is_member,check_has_top_access,check_can_create_jam_team
 from bot_events import actives
 
 def setup_commands(bot_instance: Bot):
 
     @bot_instance.tree.command(name="indir_veritabanı",guild=bot_globals.GUILD_UNOG,description="ÜNOG Veritabanını JSON olarak indirir ve günceller.")
-    @app_commands.checks.has_any_role(
-        bot_globals.ROLEID_BOTDEV,
-        bot_globals.ROLEID_DIRECTOR
-    )
+    @app_commands.check(check_has_top_access)
     async def dbjson(interaction: Interaction):
-        if not can_user_setup_bot(interaction):
-            await reply_no_permission(interaction)
-            return
         file = File("unog.json")
-        await interaction.response.send_message("ÜNOG veritabanı oluşturuldu/güncellendi.",file=file)
+        await interaction.response.send_message("ÜNOG veritabanı oluşturuldu/güncellendi.",file=file,ephemeral=True)
 
     @bot_instance.tree.command(name="ayarlar",description="Bot ayarları panelini aç.",guild=bot_globals.GUILD_UNOG)
-    @app_commands.checks.has_any_role(
-        bot_globals.ROLEID_BOTDEV,
-        bot_globals.ROLEID_DIRECTOR
-    )
+    @app_commands.check(check_has_top_access)
     async def botSettings(interctn: Interaction):
 
         embed = Embed(title="Bot Ayarları", description="Onaylama kanalı seçin.", color=choice(bot_globals.COLORS_UNOG))
@@ -159,12 +150,9 @@ def setup_commands(bot_instance: Bot):
         await interctn.response.send_message("", view=view, embed=embed, ephemeral=True, delete_after=180)
 
     @bot_instance.tree.command(name="butonları_yenile", description="Aktif butonları yeniler.",guild=bot_globals.GUILD_UNOG)
-    @app_commands.checks.has_any_role(
-        bot_globals.ROLEID_BOTDEV,
-        bot_globals.ROLEID_DIRECTOR
-    )
+    @app_commands.check(check_has_top_access)
     async def refresh_active_buttons(interaction: Interaction):
-        if not can_user_setup_bot(interaction):
+        if not check_is_botdev(interaction):
             await reply_no_permission(interaction)
             return
 
@@ -172,13 +160,10 @@ def setup_commands(bot_instance: Bot):
         await interaction.response.send_message('Butonlar yenilendi.', ephemeral=True, delete_after=30)
 
     @bot_instance.tree.command(name="excell", description="ÜNOG veritabanını excel dosyası olarak çıkarır ve günceller.",guild=bot_globals.GUILD_UNOG)
-    @app_commands.checks.has_any_role(
-        bot_globals.ROLEID_BOTDEV,
-        bot_globals.ROLEID_DIRECTOR
-    )
+    @app_commands.check(check_has_top_access)
     async def excell(interaction: Interaction):
 
-        if not can_user_setup_bot(interaction):
+        if not check_is_botdev(interaction):
             await reply_no_permission(interaction)
             return
         
@@ -202,52 +187,71 @@ def setup_commands(bot_instance: Bot):
         await interaction.response.send_message('Excell dosyası oluşturuldu/güncellendi.', ephemeral=True, delete_after=180, file=attach)
 
     @bot_instance.tree.command(name="jam-yarat", description="Yeni bir jam oluştur.",guild=bot_globals.GUILD_UNOG)
-    @discord.app_commands.describe(jam_kısa_adı="Jam'in kısa adı",jam_tam_adı="Jam'in uzun yazımı",baslangic_timestamp="Başlangıç tarihinin Unix kodu",bitis_timestamp="Bitiş tarihinin Unix kodu",jam_url="Jam sayfasının url adresi")
-    @app_commands.checks.has_any_role(
-        bot_globals.ROLEID_BOTDEV,
-        bot_globals.ROLEID_DIRECTOR,
-        bot_globals.ROLEID_JAM_MOD
-    )
-    async def jam_create(interaction: Interaction, jam_kısa_adı: str,jam_tam_adı : str,baslangic_timestamp : str,bitis_timestamp: str,jam_url : str):
+    @discord.app_commands.describe(jam_kısa_adı="Jam'in kısa adı (örn: GGJ26)",jam_tam_adı="Jam'in uzun yazımı (örn: Global Game Jam 2026)",baslangic_timestamp="Başlangıç tarihinin Unix kodu",bitis_timestamp="Bitiş tarihinin Unix kodu",jam_url="Jam sayfasının url adresi")
+    @app_commands.check(check_is_jam_mod)
+    async def jam_create(interaction: Interaction, jam_kısa_adı: str,jam_tam_adı : str,baslangic_timestamp : int,bitis_timestamp: int,jam_url : str):
         
         guild: Guild = interaction.guild
 
-        jamName = jam_kısa_adı.lower().strip()
-        jamFullname = jam_tam_adı.strip().title()
+        jam_kısa_adı = jam_kısa_adı.upper().strip()
+        jam_tam_adı = jam_tam_adı.strip().title()
 
-        if bot_globals.TABLE_JAMS.contains(Query().shortName == jamName):
-            raise JamAlreadyContains()
+        jamData = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
+
+        if jamData:
+            raise JamAlreadyPresent()
         
         bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.truncate()
         bot_globals.TABLE_JAM_CURRENT_TEAMS.truncate()
 
-        category: CategoryChannel = await guild.create_category(jam_kısa_adı.strip())
-        voiceChannel = await guild.create_voice_channel(name=f"{jam_kısa_adı.strip()} Sohbet", category=category)
-        textChannel = await guild.create_text_channel(str.lower(f"{jam_kısa_adı.strip()} genel").replace(" ", "-"), category=category)
+        category: CategoryChannel = await guild.create_category(jam_kısa_adı)
+        voiceChannel = await guild.create_voice_channel(name=f"{jam_kısa_adı} Sohbet", category=category)
+        textChannel = await guild.create_text_channel(str.lower(f"{jam_kısa_adı} genel").replace(" ", "-"), category=category)
         
-        jamRole : Role = await guild.create_role(name=jam_kısa_adı + " Jammer")
+        participantRole : Role = await guild.create_role(name=jam_kısa_adı + " Katılımcısı")
+        jammerRole : Role = await guild.create_role(name=jam_kısa_adı + " Jammer")
 
-        bot_globals.TABLE_JAMS.insert({'shortName':jamName,
-        'longName': jamFullname,
+        bot_globals.TABLE_JAM_CURRENT.insert({
+        '_type':"meta",
+        'shortName': jam_kısa_adı,
+        'longName': jam_tam_adı,
         'categoryID': category.id,
         'generalTextChannelID': textChannel.id,
         'generalVoiceChannelID': voiceChannel.id,
+        'participantRoleID': participantRole.id,
+        'jammerRoleID': jammerRole.id,
         'startUnix': baslangic_timestamp,
         'endUnix': bitis_timestamp,
-        'url': jam_url})
+        'url': jam_url
+    })
 
         await interaction.response.send_message(
-            "Jam: **" + jamFullname + "** başarıyla yaratıldı.",
+            "Jam: **" + jam_tam_adı + "** başarıyla yaratıldı.",
             ephemeral=True, delete_after=30)
 
+    @bot_instance.tree.command(name="jam-bitir", description="Mevcut jam'i bitirir.",guild=bot_globals.GUILD_UNOG)
+    @app_commands.check(check_is_jam_mod)
+    async def jam_end(interaction : Interaction):
+        jamData = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
+
+        if not jamData:
+            raise NoJamPresent()
+
+        for i in interaction.guild.categories:
+            if i.id == jamData.categoryID:
+                for j in i.channels:
+                    await interaction.guild._remove_channel(j)
+                interaction.guild._remove_channel(i)
+                break
+        
+        bot_globals.TABLE_JAM_CURRENT.truncate()
+        bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.truncate()
+        bot_globals.TABLE_JAM_CURRENT_TEAMS.truncate()
+
+        await interaction.response.send_message("Jam başarıyla bitirildi.",ephemeral=True, delete_after=30)
+
     @bot_instance.tree.command(name="jam-katıl", description="Mevcut jame katılırsınız.",guild=bot_globals.GUILD_UNOG)
-    @app_commands.checks.has_any_role(
-        bot_globals.ROLEID_MEMBER,
-        bot_globals.ROLEID_BOTDEV,
-        bot_globals.ROLEID_DIRECTOR,
-        bot_globals.ROLEID_JAM_MOD,
-        bot_globals.ROLEID_APPROVER
-    )
+    @app_commands.check(check_is_member)
     async def jam_join(interaction : Interaction):
 
         currentJam = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
@@ -265,13 +269,7 @@ def setup_commands(bot_instance: Bot):
 
     @bot_instance.tree.command(name="jam-takım-kur", description="Katıldığınız jamde ekip kurarsınız.",guild=bot_globals.GUILD_UNOG)
     @discord.app_commands.describe(ekip_adi="Lideri olacağınız ekibinizin adı")
-    @app_commands.checks.has_any_role(
-        bot_globals.ROLEID_MEMBER,
-        bot_globals.ROLEID_BOTDEV,
-        bot_globals.ROLEID_DIRECTOR,
-        bot_globals.ROLEID_JAM_MOD,
-        bot_globals.ROLEID_APPROVER
-    )
+    @app_commands.check(check_can_create_jam_team)
     async def jam_create_team(interaction : Interaction, ekip_adi : str ):
 
         ekip_adi = ekip_adi.strip().lower()
@@ -297,15 +295,17 @@ def setup_commands(bot_instance: Bot):
         })
 
     @bot_instance.tree.command(name="jam-takımları-kur", description="Jam takımlarını oluştur.",guild=bot_globals.GUILD_UNOG)
-    @discord.app_commands.describe(category="Jam'in bulunduğu Kategori Kanalı", teams=".csv formatında takımların dosyası")
-    @app_commands.checks.has_any_role(
-        bot_globals.ROLEID_BOTDEV,
-        bot_globals.ROLEID_DIRECTOR,
-        bot_globals.ROLEID_JAM_MOD
-    )
-    async def jam_set_teams(interaction: Interaction, category: CategoryChannel, teams: Attachment):
+    @discord.app_commands.describe(teams=".csv formatında takımların dosyası")
+    @app_commands.check(check_is_jam_mod)
+    async def jam_set_teams(interaction: Interaction, teams: Attachment):
+        jamData = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
+
+        if not jamData:
+            raise NoJamPresent()
+         
         file_bytes = await teams.read()
         data = json.loads(file_bytes.decode("utf-8"))
+        category : CategoryChannel = interaction.guild.get_channel(jamData.categoryID)
         if isinstance(data, dict):
             for key, item in data.items():
                 await interaction.guild.create_voice_channel(name=key, category=category)
@@ -314,11 +314,7 @@ def setup_commands(bot_instance: Bot):
 
     @bot_instance.tree.command(name="jam-terfi", description="Oyun sayfası eklenmiş olan ekiplerin/soloları terfi eder.",guild=bot_globals.GUILD_UNOG)
     @discord.app_commands.describe(category="Jam'in bulunduğu Kategori Kanalı", teams=".csv formatında takımların dosyası")
-    @app_commands.checks.has_any_role(
-        bot_globals.ROLEID_BOTDEV,
-        bot_globals.ROLEID_DIRECTOR,
-        bot_globals.ROLEID_JAM_MOD
-    )
+    @app_commands.check(check_is_jam_mod)
     async def jam_set_teams(interaction: Interaction, category: CategoryChannel, teams: Attachment):
         file_bytes = await teams.read()
         data = json.loads(file_bytes.decode("utf-8"))
@@ -330,11 +326,7 @@ def setup_commands(bot_instance: Bot):
 
     @bot_instance.tree.command(name="onayla", description="Kullanıcıyı manuel onaylar.", guild=bot_globals.GUILD_UNOG)
     @discord.app_commands.describe(user="Onaylanan kullanıcı",usernick="Yeni İsmi")
-    @app_commands.checks.has_any_role(
-        bot_globals.ROLEID_BOTDEV,
-        bot_globals.ROLEID_DIRECTOR,
-        bot_globals.ROLEID_APPROVER
-    )
+    @app_commands.check(check_is_approver)
     async def approve_manually(interaction: Interaction, user: Member,usernick : str):
         
         IsUserMember : bool = False
@@ -362,15 +354,8 @@ def setup_commands(bot_instance: Bot):
 
     @bot_instance.tree.command(name="onay_kayıt_butonu_yarat", description="Girilen kanalda onay kayıt butonu oluşturur.",guild=bot_globals.GUILD_UNOG)
     @discord.app_commands.describe(description="Mesaj için metin girin.")
-    @app_commands.checks.has_any_role(
-        bot_globals.ROLEID_BOTDEV,
-        bot_globals.ROLEID_DIRECTOR
-    )
+    @app_commands.check(check_has_top_access)
     async def create_verification_application_button(interaction: Interaction, description: str = None):
-        
-        if not can_user_setup_bot(interaction.user):
-            await reply_no_permission(interaction)
-            return
         
         verificationChannel = bot_globals.UnogBot.get_channel(bot_globals.TEXTCHANNELID_VERIFICATION)
         
@@ -385,7 +370,7 @@ def setup_commands(bot_instance: Bot):
             if bot_globals.Server_Unog.get_role(bot_globals.ROLEID_MEMBER) in interaction.user.roles:
                 await interaction.response.send_message("Sistemimizde onaylı gözüküyorsunuz, bir hata durumunda Direktörlerimize ulaşabilirsiniz.", ephemeral=True, delete_after=10)
                 return
-            await interaction.response.send_modal(ApprovalModal())
+            await interaction.response.send_modal(ApprovalModal(denyCallback=deny_by_application,approveCallback=approve_by_application))
 
         button1 = Button(style=ButtonStyle.primary, label="Onay Talebi İçin Tıkla!", custom_id="modal")
         button1.callback = send_modal
@@ -393,5 +378,18 @@ def setup_commands(bot_instance: Bot):
 
         message = await interaction.channel.send(description, view=view)
 
+async def approve_by_application(interaction : Interaction):
+    if check_is_approver(interaction):
+        print(interaction.message.embeds[0].fields[0].value) 
+        #await interaction.message.add_reaction('') #:white_check_mark:
+        view = interaction.message.view
+        for item in view.children:
+            item.disabled = True
+        embed = Embed(title="Onaylandı! :white_check_mark:",description=f"{interaction.message.embeds[0].description.split()[0]}")
+        embed.add_field(name="Onaylayan",value=f"<@{interaction.user.id}>")
+        await interaction.response.send_message("",embed=embed)
+    #    bot_globals.TABLE_APPROVES.upsert({'name': nameFormat ,'email': self.email.value, 'birthday': self.birthday.value, 'info1': self.info1.value, 'info2': self.info2.value, 'inserver': 'no', 'memberinfo': 'no', 'id': interaction.user.id}, Query().id == interaction.user.id)
+def deny_by_application(interaction : Interaction):
+    return
         
 

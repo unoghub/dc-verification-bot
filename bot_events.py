@@ -32,8 +32,9 @@ def setup_events():
             print(f'command sync fail:{e}')
 
     @bot_globals.UnogBot.tree.error
-    async def on_command_error(interaction : Interaction, error):
-        await interaction.response.send_message(error,ephemeral=True,delete_after=30)
+    async def on_app_command_error(interaction : Interaction, error):
+        print(f"ErrorType:{type(error)}\n Message:{error}")
+        await interaction.response.send_message(f"Hata!: {error}",ephemeral=True,delete_after=30)
         
     @bot_globals.UnogBot.event
     async def on_member_join(member : Member):
