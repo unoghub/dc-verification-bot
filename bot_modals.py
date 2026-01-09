@@ -16,7 +16,7 @@ class DenyVerificationModal(Modal):
 
         user : Member = interaction.guild.get_member(int(interaction.message.embeds[0].description.split(">")[0].split("@")[1]))
 
-        bot_globals.TABLE_DENIES.insert({'reason': self.info1.value, 'refuser': interaction.user.name,'id':user.id})
+        #bot_globals.TABLE_DENIES.insert({'reason': self.info1.value, 'refuser': interaction.user.name,'id':user.id})
 
         embed = Embed(title="Reddedildi ❌", description="Kullanıcıya mesaj gönderildi!", color=choice(bot_globals.COLORS_UNOG))
         embed.add_field(name="\u200b", value=f"<@{user.id}>", inline=False)
@@ -72,8 +72,8 @@ class ApprovalModal(Modal):
         embed.add_field(name="ÜNOG'u Nasıl Keşfettiniz?", value=self.info2.value, inline=False)
         embed.set_thumbnail(url=interaction.user.avatar)
 
-        buton1 =   Button(style=ButtonStyle.green, label="Onayla", custom_id="onayla")
-        buton2 =   Button(style=ButtonStyle.red, label="Reddet", custom_id="reddet")
+        buton1 =   Button(style=ButtonStyle.green, label="Onayla", custom_id="approveButton")
+        buton2 =   Button(style=ButtonStyle.red, label="Reddet", custom_id="denyApprovalButton")
         view = View(timeout=None)
         buton1.callback = self._approveCallback
         buton2.callback = self._denyCallback

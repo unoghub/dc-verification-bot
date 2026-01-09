@@ -6,7 +6,7 @@ from discord.ui import View,Button
 from tinydb import  Query
 
 from bot_modals import ApprovalModal
-from bot_actions import approve_verification,deny_verification
+from bot_actions import deny_by_application,approve_by_application
 import bot_globals
 
 def setup_events():
@@ -47,7 +47,6 @@ def setup_events():
 
 @tasks.loop(hours=1)
 async def actives():
-    """Loop function for every hour"""
 
     async def send_approval_modal(interaction: Interaction):
         for role in interaction.user.roles:
@@ -58,7 +57,7 @@ async def actives():
 
     view = View(timeout=None)
 
-    button1 = Button(style=ButtonStyle.primary, label="Onay Talebi İçin Tıkla!", custom_id="modal")
+    button1 = Button(style=ButtonStyle.primary, label="Onay Talebi İçin Tıkla!", custom_id="applyVerificationButton")
     button1.callback = send_approval_modal
 
     view.add_item(button1)
@@ -66,11 +65,11 @@ async def actives():
 
     view = View(timeout=None)
 
-    buton1 = Button(style=ButtonStyle.green, label="Onayla", custom_id="onayla")
-    buton1.callback = approve_verification
+    buton1 = Button(style=ButtonStyle.green, label="Onayla", custom_id="approveButton")
+    buton1.callback = approve_by_application
 
-    buton2 = Button(style=ButtonStyle.red, label="Reddet", custom_id="reddet")
-    buton2.callback = deny_verification
+    buton2 = Button(style=ButtonStyle.red, label="Reddet", custom_id="denyApprovalButton")
+    buton2.callback = deny_by_application
 
     view.add_item(buton1)
     view.add_item(buton2)

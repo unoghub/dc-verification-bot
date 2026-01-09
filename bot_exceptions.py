@@ -16,6 +16,16 @@ class UserNotApproved(AppCommandError):
         super().__init__(message)
     pass
 
+class UserIsNull(AppCommandError):
+    def __init__(self, message=f"Kullanıcı verisi null/girilmemiş."):
+        super().__init__(message)
+    pass
+
+class UserAlreadyMember(AppCommandError):
+    def __init__(self, message=f"Bu kullanıcı zaten onaylı.(<@&{bot_globals.ROLEID_MEMBER}>)"):
+        super().__init__(message)
+    pass
+
 class UserNotApprover(AppCommandError):
     def __init__(self, message=f"Bu komutu kullanmak için <@&{bot_globals.ROLEID_APPROVER}> rolüne sahip olmanız gerekmektedir."):
         super().__init__(message)

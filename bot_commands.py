@@ -1,3 +1,4 @@
+from types import NoneType
 import discord
 import json
 import os
@@ -8,12 +9,12 @@ from discord.ext.commands import Context,Bot,check
 from openpyxl import Workbook
 from tinydb import Query
 import bot_globals
-from bot_modals import ApprovalModal,VerificationPanelChannelSelect,MemberRoleSelect,ApproverRoleSelect,VerificationChannelSelect,WelcomeChannelSelect
+from bot_modals import ApprovalModal,VerificationPanelChannelSelect,MemberRoleSelect,ApproverRoleSelect,VerificationChannelSelect,WelcomeChannelSelect,DenyVerificationModal
 from discord.app_commands.checks import has_any_role,has_role
 from discord import app_commands
-from bot_actions import welcome_member_message
-from bot_exceptions import reply_no_permission,JamAlreadyPresent,JamAlreadyParticipating,JamTeamAlreadyPresent,NoJamPresent,JamNotParticipating
-from bot_conditions import check_is_approver,check_is_jam_mod,check_is_botdev,check_is_member,check_has_top_access,check_can_create_jam_team
+from bot_actions import welcome_member_message,on_verification_apply_button_clicked
+from bot_exceptions import reply_no_permission,UserIsNull,JamAlreadyPresent,JamAlreadyParticipating,JamTeamAlreadyPresent,NoJamPresent,JamNotParticipating,UserNotApprover,UserAlreadyMember
+from bot_conditions import check_is_approver,check_is_jam_mod,check_is_botdev,check_is_member,check_has_top_access,check_can_create_jam_team, is_not_member
 from bot_events import actives
 
 def setup_commands(bot_instance: Bot):
@@ -325,37 +326,35 @@ def setup_commands(bot_instance: Bot):
         await interaction.response.send_message("Takımlar başarıyla oluşturuldu.", ephemeral=True, delete_after=30)
 
     @bot_instance.tree.command(name="onayla", description="Kullanıcıyı manuel onaylar.", guild=bot_globals.GUILD_UNOG)
-    @discord.app_commands.describe(user="Onaylanan kullanıcı",usernick="Yeni İsmi")
+    @discord.app_commands.describe(target_user="Onaylanan kullanıcı",usernick="Yeni İsmi")
     @app_commands.check(check_is_approver)
-    async def approve_manually(interaction: Interaction, user: Member,usernick : str):
-        
-        IsUserMember : bool = False
-        for i in user.roles:
-            if i.id == bot_globals.ROLEID_MEMBER:
-                IsUserMember = True
+    async def approve_manually(interaction: Interaction, target_user: Member,usernick : str):
 
-        if not IsUserMember:
-            await user.add_roles(bot_globals.ROLEID_MEMBER)
+        if target_user is None:
+            raise UserIsNull()
+
+        if is_not_member(target_user):
+            
+            memberRole = interaction.guild.get_role(bot_globals.ROLEID_MEMBER)
+
+            await target_user.add_roles(memberRole)
             if usernick:
-                await user.edit(nick=usernick)
+                await target_user.edit(nick=usernick)
+
+            verificationPanel = interaction.guild.get_channel(bot_globals.TEXTCHANNELID_VERIFICATION_PANEL)
+            if verificationPanel:
+                embed = Embed(title=f"Onaylandı!", color=choice(bot_globals.COLORS_UNOG))
+                embed.add_field(name="\u200b", value=f"<@{target_user.id}>", inline=False)
+                embed.set_thumbnail(url=target_user.avatar)
+                await interaction.response.send_message(embed=embed)
+
+            await welcome_member_message(interaction.guild, target_user)
         else:
-            interaction.response.send_message("Kullanıcı zaten onaylı",ephemeral=True,delete_after=30)
-            return
-
-        bot_globals.TABLE_MEMBERS.update({'inserver': 'yes'}, Query().id == user.id)
-
-        embed = Embed(title=f"Onaylandı!", color=choice(bot_globals.COLORS_UNOG))
-        embed.add_field(name="\u200b", value=f"<@{user.id}>", inline=False)
-        embed.set_thumbnail(url=user.avatar)
-
-        await interaction.response.send_message(embed=embed)
-
-        await welcome_member_message(interaction.guild, user)
+            raise UserAlreadyMember()
 
     @bot_instance.tree.command(name="onay_kayıt_butonu_yarat", description="Girilen kanalda onay kayıt butonu oluşturur.",guild=bot_globals.GUILD_UNOG)
-    @discord.app_commands.describe(description="Mesaj için metin girin.")
     @app_commands.check(check_has_top_access)
-    async def create_verification_application_button(interaction: Interaction, description: str = None):
+    async def create_verification_application_button(interaction: Interaction):
         
         verificationChannel = bot_globals.UnogBot.get_channel(bot_globals.TEXTCHANNELID_VERIFICATION)
         
@@ -365,31 +364,12 @@ def setup_commands(bot_instance: Bot):
 
         view = View(timeout=None)
 
-        async def send_modal(interaction : Interaction):
-
-            if bot_globals.Server_Unog.get_role(bot_globals.ROLEID_MEMBER) in interaction.user.roles:
-                await interaction.response.send_message("Sistemimizde onaylı gözüküyorsunuz, bir hata durumunda Direktörlerimize ulaşabilirsiniz.", ephemeral=True, delete_after=10)
-                return
-            await interaction.response.send_modal(ApprovalModal(denyCallback=deny_by_application,approveCallback=approve_by_application))
-
-        button1 = Button(style=ButtonStyle.primary, label="Onay Talebi İçin Tıkla!", custom_id="modal")
-        button1.callback = send_modal
+        button1 = Button(style=ButtonStyle.primary, label="Onay Talebi İçin Tıkla!", custom_id="applyVerificationButton")
+        button1.callback = on_verification_apply_button_clicked
         view.add_item(button1)
 
-        message = await interaction.channel.send(description, view=view)
+        message = await interaction.channel.send("", view=view)
 
-async def approve_by_application(interaction : Interaction):
-    if check_is_approver(interaction):
-        print(interaction.message.embeds[0].fields[0].value) 
-        #await interaction.message.add_reaction('') #:white_check_mark:
-        view = interaction.message.view
-        for item in view.children:
-            item.disabled = True
-        embed = Embed(title="Onaylandı! :white_check_mark:",description=f"{interaction.message.embeds[0].description.split()[0]}")
-        embed.add_field(name="Onaylayan",value=f"<@{interaction.user.id}>")
-        await interaction.response.send_message("",embed=embed)
-    #    bot_globals.TABLE_APPROVES.upsert({'name': nameFormat ,'email': self.email.value, 'birthday': self.birthday.value, 'info1': self.info1.value, 'info2': self.info2.value, 'inserver': 'no', 'memberinfo': 'no', 'id': interaction.user.id}, Query().id == interaction.user.id)
-def deny_by_application(interaction : Interaction):
-    return
+
         
 

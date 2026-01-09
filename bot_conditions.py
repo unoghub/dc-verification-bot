@@ -1,6 +1,6 @@
 from discord import Member,Interaction
 from discord.ext.commands import Context
-from bot_exceptions import UserNotApproved,UserNotBotDev,UserNotHasTopAccess,UserNotJamMod,NoJamPresent,JamNotParticipating,UserAlreadyInATeam,UserNotApprover
+from bot_exceptions import UserAlreadyMember,UserNotApproved,UserNotBotDev,UserNotHasTopAccess,UserNotJamMod,NoJamPresent,JamNotParticipating,UserAlreadyInATeam,UserNotApprover
 from tinydb import Query
 import bot_globals
 
@@ -32,6 +32,24 @@ def is_user_member(user: Member) -> bool:
     if user.get_role(bot_globals.ROLEID_MEMBER):
         return True
     return False
+
+def is_not_member(member : Member) -> bool:
+    member_role = member.get_role(bot_globals.ROLEID_MEMBER)
+    director_role = member.get_role(bot_globals.ROLEID_DIRECTOR)
+    approver_role = member.get_role(bot_globals.ROLEID_APPROVER)
+    botdev_role = member.get_role(bot_globals.ROLEID_BOTDEV)
+    jammod_role = member.get_role(bot_globals.ROLEID_JAM_MOD)
+
+    if is_user_admin(member):
+        return False
+
+    return not any([
+        member_role,
+        director_role,
+        approver_role,
+        botdev_role,
+        jammod_role
+    ])
 
 def check_is_approver(interaction : Interaction) -> bool:
     if is_user_approver(interaction.user) or is_user_bot_dev(interaction.user) or is_user_admin(interaction.user) or is_user_director(interaction.user):
