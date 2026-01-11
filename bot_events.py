@@ -1,12 +1,6 @@
-from discord.ext.commands import Bot
-from discord import Member,Interaction,ButtonStyle,Guild,Object
-from discord.app_commands import AppCommandError,CheckFailure,MissingPermissions,MissingRole,MissingAnyRole
-from discord.ext import  tasks
-from discord.ui import View,Button
+from discord import Member,Interaction
 from tinydb import  Query
-
-from bot_modals import ApprovalModal
-from bot_actions import deny_by_application,approve_by_application
+from bot_actions import actives
 import bot_globals
 
 def setup_events():
@@ -34,7 +28,7 @@ def setup_events():
     @bot_globals.UnogBot.tree.error
     async def on_app_command_error(interaction : Interaction, error):
         print(f"ErrorType:{type(error)}\n Message:{error}")
-        await interaction.response.send_message(f"Hata!: {error}",ephemeral=True,delete_after=30)
+        await interaction.response.send_message(f"**Hata:**\n {error}",ephemeral=True,delete_after=30)
         
     @bot_globals.UnogBot.event
     async def on_member_join(member : Member):
@@ -42,37 +36,3 @@ def setup_events():
         if user: #member is in db
             if user['approved'] == True:
                 await member.add_roles(bot_globals.ROLEID_MEMBER)
-        else: #new member is not in db,add a record
-            bot_globals.TABLE_MEMBERS.insert({'id':member.id})
-
-@tasks.loop(hours=1)
-async def actives():
-
-    async def send_approval_modal(interaction: Interaction):
-        for role in interaction.user.roles:
-            if role == bot_globals.ROLEID_MEMBER:
-                await interaction.response.send_message("Hesabınız veritabanımızda zaten onaylı gözükmektedir.", ephemeral=True, delete_after=10)
-                return
-        await interaction.response.send_modal(ApprovalModal())
-
-    view = View(timeout=None)
-
-    button1 = Button(style=ButtonStyle.primary, label="Onay Talebi İçin Tıkla!", custom_id="applyVerificationButton")
-    button1.callback = send_approval_modal
-
-    view.add_item(button1)
-    bot_globals.UnogBot.add_view(view=view)
-
-    view = View(timeout=None)
-
-    buton1 = Button(style=ButtonStyle.green, label="Onayla", custom_id="approveButton")
-    buton1.callback = approve_by_application
-
-    buton2 = Button(style=ButtonStyle.red, label="Reddet", custom_id="denyApprovalButton")
-    buton2.callback = deny_by_application
-
-    view.add_item(buton1)
-    view.add_item(buton2)
-
-    bot_globals.UnogBot.add_view(view=view)
-    print("Actives refreshed")

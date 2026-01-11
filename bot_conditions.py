@@ -1,17 +1,19 @@
 from discord import Member,Interaction
-from discord.ext.commands import Context
-from bot_exceptions import UserAlreadyMember,UserNotApproved,UserNotBotDev,UserNotHasTopAccess,UserNotJamMod,NoJamPresent,JamNotParticipating,UserAlreadyInATeam,UserNotApprover
+from bot_exceptions import JamAlreadyPresent, UserAlreadyVerified, UserNotInJam,UserNotVerified,UserNotBotDev,UserNotHasTopAccess,UserNotJamMod,JamNotPresent,JamNotParticipating,UserAlreadyInJamTeam,UserNotApprover,UserAlreadyInJam
 from tinydb import Query
 import bot_globals
 
-
-def is_user_admin(user: Member) -> bool:
-    return user.guild_permissions.administrator
+#region conditions
 
 def is_user_director(user: Member) -> bool:
-    if user.get_role(bot_globals.ROLEID_DIRECTOR):
-        return True
-    return False
+    director_role = user.get_role(bot_globals.ROLEID_DIRECTOR)
+    botdev_role = user.get_role(bot_globals.ROLEID_BOTDEV)
+
+    return any([
+        director_role,
+        botdev_role,
+        user.guild_permissions.administrator
+    ])
 
 def is_user_bot_dev(user : Member) -> bool:
     if user.get_role(bot_globals.ROLEID_BOTDEV):
@@ -19,45 +21,74 @@ def is_user_bot_dev(user : Member) -> bool:
     return False
 
 def is_user_jam_mod(user : Member) -> bool:
-    if user.get_role(bot_globals.ROLEID_JAM_MOD):
-        return True
-    return False
+    director_role = user.get_role(bot_globals.ROLEID_DIRECTOR)
+    botdev_role = user.get_role(bot_globals.ROLEID_BOTDEV)
+    jammod_role = user.get_role(bot_globals.ROLEID_JAM_MOD)
+    return any([
+        director_role,
+        botdev_role,
+        jammod_role,
+        user.guild_permissions.administrator
+    ])
 
 def is_user_approver(user: Member) -> bool:
-    if user.get_role(bot_globals.ROLEID_APPROVER):
-        return True
-    return False
+    director_role = user.get_role(bot_globals.ROLEID_DIRECTOR)
+    approver_role = user.get_role(bot_globals.ROLEID_APPROVER)
+    botdev_role = user.get_role(bot_globals.ROLEID_BOTDEV)
+    return any([
+        director_role,
+        approver_role,
+        botdev_role,
+        user.guild_permissions.administrator
+    ])
 
 def is_user_member(user: Member) -> bool:
-    if user.get_role(bot_globals.ROLEID_MEMBER):
-        return True
-    return False
+    member_role = user.get_role(bot_globals.ROLEID_MEMBER)
+    director_role = user.get_role(bot_globals.ROLEID_DIRECTOR)
+    approver_role = user.get_role(bot_globals.ROLEID_APPROVER)
+    botdev_role = user.get_role(bot_globals.ROLEID_BOTDEV)
+    jammod_role = user.get_role(bot_globals.ROLEID_JAM_MOD)
 
-def is_not_member(member : Member) -> bool:
-    member_role = member.get_role(bot_globals.ROLEID_MEMBER)
-    director_role = member.get_role(bot_globals.ROLEID_DIRECTOR)
-    approver_role = member.get_role(bot_globals.ROLEID_APPROVER)
-    botdev_role = member.get_role(bot_globals.ROLEID_BOTDEV)
-    jammod_role = member.get_role(bot_globals.ROLEID_JAM_MOD)
-
-    if is_user_admin(member):
-        return False
-
-    return not any([
+    return any([
         member_role,
         director_role,
         approver_role,
         botdev_role,
-        jammod_role
+        jammod_role,
+        user.guild_permissions.administrator
     ])
 
+def is_user_have_top_access(user: Member) -> bool:
+
+    director_role = user.get_role(bot_globals.ROLEID_DIRECTOR)
+    botdev_role = user.get_role(bot_globals.ROLEID_BOTDEV)
+
+    return any([
+        director_role,
+        botdev_role,
+        user.guild_permissions.administrator
+    ])
+
+def is_jam_present():
+    return bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
+
+def is_user_in_jam(user: Member):
+    return bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == user.id)
+    
+def is_user_in_jam_team(user: Member) -> bool:
+    return bot_globals.TABLE_JAM_CURRENT_TEAMS.get(Query().members.any(user.id) or Query().leader == user.id)
+
+#endregion
+
+#region checks
+
 def check_is_approver(interaction : Interaction) -> bool:
-    if is_user_approver(interaction.user) or is_user_bot_dev(interaction.user) or is_user_admin(interaction.user) or is_user_director(interaction.user):
+    if is_user_approver(interaction.user):
         return True
     raise UserNotApprover()
 
 def check_is_jam_mod(interaction : Interaction) -> bool:
-    if is_user_jam_mod(interaction.user) or is_user_bot_dev(interaction.user) or is_user_admin(interaction.user) or is_user_director(interaction.user):
+    if is_user_jam_mod(interaction.user):
         return True
     raise UserNotJamMod()
 
@@ -67,29 +98,92 @@ def check_is_botdev(interaction : Interaction) -> bool:
     raise UserNotBotDev()
 
 def check_is_member(interaction : Interaction) -> bool:
-    member = interaction.user.get_role(bot_globals.ROLEID_MEMBER)
-    director = interaction.user.get_role(bot_globals.ROLEID_DIRECTOR)
-    approver = interaction.user.get_role(bot_globals.ROLEID_APPROVER)
-    botdev = interaction.user.get_role(bot_globals.ROLEID_BOTDEV)
-    jammod = interaction.user.get_role(bot_globals.ROLEID_JAM_MOD)
-    if member or director or approver or botdev or jammod or is_user_admin(interaction.user):
+    if is_user_member(interaction.user):
         return True
-    raise UserNotApproved()
+    raise UserNotVerified()
 
 def check_has_top_access(interaction : Interaction) -> bool:
-    if is_user_director(interaction.user) or is_user_bot_dev(interaction.user) or is_user_admin(interaction.user):
+    if is_user_have_top_access(interaction.user):
         return True
     raise UserNotHasTopAccess()
 
 def check_can_create_jam_team(interaction : Interaction) -> bool:
-    jamData = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
-    participantData = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == interaction.user.id)
+    presentJam = is_jam_present()
+    jamParticipant = is_user_in_jam(interaction.user)
+    participantTeam = is_user_in_jam_team(interaction.user)
+
+    if presentJam:
+        if jamParticipant:
+            if not participantTeam:
+                return True
+            else:
+                UserAlreadyInJamTeam()
+        else:
+            raise UserNotInJam()
+    else:
+        raise JamNotPresent()
+
+def check_is_jam_present(interaction : Interaction) -> bool:
+    if is_jam_present():
+        return True
+    else:
+        raise JamNotPresent()
     
-    if not jamData:
-        raise NoJamPresent()
-    elif not participantData:
+def check_is_no_jam_present(interaction : Interaction) -> bool:
+    if not is_jam_present():
+        return True
+    else:
+        raise JamAlreadyPresent()
+
+def check_is_member_not_in_jam(interaction : Interaction) -> bool:
+    presentJam = is_jam_present()
+    jamParticipant = is_user_in_jam(interaction.user)
+
+    if presentJam:
+        if not jamParticipant:
+            return True
+        else:
+            raise UserAlreadyInJam()
+    else:
+        return True
+
+def check_is_member_in_jam(interaction : Interaction) -> bool:
+    presentJam = is_jam_present()
+    jamParticipant = is_user_in_jam(interaction.user)
+
+    if presentJam:
+        if jamParticipant:
+            return True
+        else:
+            raise UserAlreadyInJam()
+    else:
+        raise JamNotPresent()
+    
+def check_is_member_in_jam_team(interaction : Interaction) -> bool:
+    if check_is_member_in_jam(None):
+        partipantData = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == interaction.user.id)
+        if partipantData:
+            return True
         raise JamNotParticipating()
-    elif participantData.teamID != -1:
-        raise UserAlreadyInATeam()
-    
-    return True
+
+def check_can_user_join_jam(interaction : Interaction) -> bool:
+    if is_jam_present():
+        if is_user_in_jam(interaction.user):
+            raise UserAlreadyInJam()
+        else:
+            return True
+    else:
+        raise JamNotPresent()
+
+def check_can_user_create_jam_team(interaction : Interaction) -> bool:
+    if is_jam_present():
+        if is_user_in_jam(interaction.user):
+            raise UserAlreadyInJam()
+        else:
+            if is_user_in_jam_team(interaction.user):
+                raise UserAlreadyInJamTeam()
+            else:
+                return True
+    else:
+        raise JamNotPresent()
+#endregion
