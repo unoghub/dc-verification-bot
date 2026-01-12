@@ -151,7 +151,7 @@ async def approve_user(approver : Member,target_user: Member, newName : str = ""
      
     memberRole = bot_globals.Server_Unog.get_role(bot_globals.ROLEID_MEMBER)
 
-    unogMember = UnogMember(target_user.id,newName=newName,eMail=eMail,birthday=birthday,info1=info1,info2=info2)
+    unogMember = UnogMember(target_user.id,name=newName,email=eMail,birthday=birthday,info1=info1,info2=info2)
     approveRecord = ApproveRecord(target_user.id,approver.id)
 
     await target_user.add_roles(memberRole)

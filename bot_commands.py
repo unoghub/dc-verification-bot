@@ -11,11 +11,12 @@ import bot_globals
 from bot_views import ApproverRoleSelect, MemberRoleSelect, VerificationChannelSelect, VerificationPanelChannelSelect, WelcomeChannelSelect, ApprovalApplyButtonView
 from discord.app_commands.checks import has_any_role,has_role
 from discord import app_commands
-from bot_actions import welcome_member_message,approvalForm_applyButton_interaction,approve_user
+from bot_actions import approvalForm_applyButton_interaction,approve_user
 from bot_exceptions import reply_no_permission,UserIsNull,JamAlreadyPresent,JamAlreadyParticipating,JamTeamAlreadyPresent,JamNotPresent,JamNotParticipating,UserNotApprover,UserAlreadyVerified
-from bot_conditions import check_can_user_create_jam_team, check_can_user_join_jam, check_is_approver,check_is_jam_mod,check_is_botdev, check_is_jam_present,check_is_member,check_has_top_access,check_can_create_jam_team, check_is_member_not_in_jam, check_is_no_jam_present, is_user_member
+from bot_conditions import check_can_user_create_jam_team, check_can_user_join_jam, check_is_approver,check_is_jam_mod,check_is_botdev, check_is_jam_present,check_is_member,check_has_top_access, check_is_no_jam_present, is_user_member,is_jam_present,is_user_in_jam,is_user_in_jam_team
 from bot_events import actives
-from bot_models import Jam
+from bot_models import Jam, JamParticipant, JamTeam
+from importer_ggj26 import ImporterGGJ26
 
 def setup_commands(bot_instance: Bot):
 #region verification_commands
@@ -213,16 +214,16 @@ def setup_commands(bot_instance: Bot):
 
 #region jam_commands
     @bot_instance.tree.command(name="jam-yarat", description="Yeni bir jam oluştur.",guild=bot_globals.GUILD_UNOG)
-    @discord.app_commands.describe(jam_kısa_adı="Jam'in kısa adı (örn: GGJ26)",jam_tam_adı="Jam'in uzun yazımı (örn: Global Game Jam 2026)",baslangic_timestamp="Başlangıç tarihinin Unix kodu",bitis_timestamp="Bitiş tarihinin Unix kodu",jam_url="Jam sayfasının url adresi")
+    @discord.app_commands.describe(jam_kısa_adı="Jam'in kısa adı (örn: GGJ26)",jam_tam_adı="Jam'in uzun yazımı (örn: Global Game Jam 2026)",baslangic_timestamp="Başlangıç tarihinin Unix kodu",bitis_timestamp="Bitiş tarihinin Unix kodu",jam_url="Jam sayfasının url adresi",aciklama="Jam'in kısa açıklaması.")
     @app_commands.check(check_is_jam_mod)
     @app_commands.check(check_is_no_jam_present)
-    async def jam_create(interaction: Interaction, jam_kısa_adı: str,jam_tam_adı : str,baslangic_timestamp : int,bitis_timestamp: int,jam_url : str):
+    async def jam_create(interaction: Interaction, jam_kısa_adı: str,jam_tam_adı : str,baslangic_timestamp : int,bitis_timestamp: int,jam_url : str,aciklama : str = None):
         
         guild: Guild = interaction.guild
         jam_kısa_adı = jam_kısa_adı.upper().strip()
         jam_tam_adı = jam_tam_adı.strip().title()
 
-        category: CategoryChannel = await guild.create_category(jam_kısa_adı)
+        category: CategoryChannel = await guild.create_category(jam_tam_adı)
         voiceChannel = await guild.create_voice_channel(name=f"{jam_kısa_adı} Sohbet", category=category)
         textChannel = await guild.create_text_channel(str.lower(f"{jam_kısa_adı}-genel"), category=category)
         
@@ -237,7 +238,8 @@ def setup_commands(bot_instance: Bot):
                         generalVoiceChannelID=voiceChannel.id,
                         generalTextChannelID=textChannel.id,
                         participantRoleID=participantRole.id,
-                        jammerRoleID=jammerRole.id)
+                        jammerRoleID=jammerRole.id,
+                        description=aciklama)
 
         bot_globals.TABLE_JAM_CURRENT.insert(jam)
 
@@ -245,6 +247,36 @@ def setup_commands(bot_instance: Bot):
             "Jam: **" + jam_tam_adı + "** başarıyla yaratıldı.",
             ephemeral=True)
 
+    @bot_instance.tree.command(name="jam-bilgi", description="Mevcut jamle ilgili tüm bilgileri gösterir.",guild=bot_globals.GUILD_UNOG)
+    @app_commands.check(check_is_member)
+    async def jam_info(interaction : Interaction):
+        jamRawData = is_jam_present()
+        embed : Embed = None
+        if jamRawData:
+            jamData : Jam = Jam(data=jamRawData)
+            embed = Embed(title=jamData.longName + " 🕹",
+                          color=choice(bot_globals.COLORS_UNOG),
+                          description=jamData.description)
+            embed.add_field(name="Başlangıç Zamanı:",value=f"<t:{jamData.startUnix}:d>")
+            embed.add_field(name='Bitiş Zamanı:',value=f"<t:{jamData.endUnix}:d>")
+            embed.add_field(name='Katılımcı Rolü:',value=f"<@&{jamData.participantRoleID}>")
+            embed.add_field(name='Web Adresi:',value=jamData.url)
+            await interaction.response.send_message(embed=embed,ephemeral=True)
+        else:
+            raise JamNotPresent()
+
+    @bot_instance.tree.command(name="jam-yardım", description="Mevcut jame katılırsınız.",guild=bot_globals.GUILD_UNOG)
+    @app_commands.check(check_is_member)
+    async def jam_help(interaction : Interaction):
+        embed : Embed = Embed(title="Jam Komutları",description="Aşağıda Jamle ilgili bütün komutların açıklamaları bulunmaktadır.",color=choice(bot_globals.COLORS_UNOG))
+        embed.add_field(name="/jam-bilgi",value="Mevcut jamle ilgili tüm bilgileri gösterir.")
+        embed.add_field(name="/jam-yarat",value=f"**Kullanabilen Roller:**<@&{bot_globals.ROLEID_DIRECTOR}>, <@&{bot_globals.ROLEID_JAM_MOD}>\nYeni bir jam oluşturur.\nHerhangi bir anda sadece bir tane jam bulunabilir.")
+        embed.add_field(name="/jam-ekipleri-ekle",value=f"**Kullanabilen Roller:**<@&{bot_globals.ROLEID_DIRECTOR}>, <@&{bot_globals.ROLEID_JAM_MOD}>\nMevcut jame dışarıdan ekip bilgilerini ekler.\nEklenilen dosyanın .csv formatında olması gerekir.")
+        embed.add_field(name="/jam-ekip-kur",value=f"**Jam'e katılan her üye kullanabilir**\nKatıldığınız jamde bir ekip oluşturur.\nBir jamde her katılımcının bir ekipte bulunması gerekir")
+        embed.add_field(name="/jam-bitir",value=f"Kullanabilen Roller:<@&{bot_globals.ROLEID_DIRECTOR}>, <@&{bot_globals.ROLEID_JAM_MOD}>\nMevcut jami bitirir ve tüm verileri silinir.\nYeni bir jam başlatılması için ilk önce jamin bitirilmesi gerekir.")
+        embed.add_field(name="/jam-bitir",value=f"Kullanabilen Roller:<@&{bot_globals.ROLEID_DIRECTOR}>, <@&{bot_globals.ROLEID_JAM_MOD}>\nMevcut jamde submission yapan ekip üyelerini terfi ederek kalıcı rol ataması yapar.\nJam'in herhangi bir esnasında kullanılabilir.")
+        await interaction.response.send_message(embed=embed,ephemeral=True)
+    
     @bot_instance.tree.command(name="jam-bitir", description="Mevcut jam'i bitirir, Dikkat: bütün jam verisi silinir.",guild=bot_globals.GUILD_UNOG)
     @app_commands.check(check_is_jam_mod)
     @app_commands.check(check_is_jam_present)
@@ -269,73 +301,53 @@ def setup_commands(bot_instance: Bot):
     @app_commands.check(check_can_user_join_jam)
     async def jam_join(interaction : Interaction):
 
-        currentJam = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
+        currentJam : Jam = Jam(data=bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta"))
         jamParticipantRoleID : int = currentJam.participantRoleID
+        jamParticipantRole : Role = interaction.guild.get_role(jamParticipantRoleID)
 
-        bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.insert({'discordID':interaction.user.id,'teamID':-1})
-        await interaction.user.add_roles(jamParticipantRoleID)
-        embed = Embed(title="Başarılı! ✅",description=f"{currentJam.longName} jamine katıldınız. \n Şimdi `/jam-ekip-kur <ekipAdı>` veya,\n `/jam-ekibe-katıl <ekipAdı>`komutuyla solo/ekip fark etmeksizin bir ekip oluşturup etkinliğe hazırlanabilirsiniz.\n Sıkıştığınız durumlarda `/jam-yardım` komutuyla her komutun detaylı açıklamasına ulaşabilirsiniz.")
+
+
+        bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.insert(JamParticipant(discordID=interaction.user.id))
+        await interaction.user.add_roles(jamParticipantRole)
+        embed = Embed(title="Başarılı! ✅",color=choice(bot_globals.COLORS_UNOG),description=f"{currentJam.longName} jamine katıldınız. \n\n Şimdi `/jam-ekip-kur <ekipAdı>` veya,\n `/jam-ekibe-katıl <ekipAdı>`komutuyla solo/ekip fark etmeksizin bir ekip oluşturup etkinliğe hazırlanabilirsiniz.\n\n Sıkıştığınız durumlarda `/jam-yardım` komutuyla her komutun detaylı açıklamasına ulaşabilirsiniz.")
         await interaction.response.send_message("",embed=embed,ephemeral=True)
 
-    @bot_instance.tree.command(name="jam-takım-kur", description="Katıldığınız jamde ekip kurarsınız.",guild=bot_globals.GUILD_UNOG)
+    @bot_instance.tree.command(name="jam-ekip-kur", description="Katıldığınız jamde ekip kurarsınız.",guild=bot_globals.GUILD_UNOG)
     @discord.app_commands.describe(ekip_adi="Lideri olacağınız ekibinizin adı")
     @app_commands.check(check_is_member)
     @app_commands.check(check_can_user_create_jam_team)
     async def jam_create_team(interaction : Interaction, ekip_adi : str ):
 
         ekip_adi = ekip_adi.strip().lower()
-        currentJam = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
-        participantData = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.contains(Query().discordID == interaction.user.id)
-        teamData = bot_globals.TABLE_JAM_CURRENT_TEAMS.contains(Query().teamName == ekip_adi)
+        currentJamRawData = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
+        participantRawData = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.contains(Query().discordID == interaction.user.id)
+        teamRawData = bot_globals.TABLE_JAM_CURRENT_TEAMS.contains(Query().teamName == ekip_adi)
 
-        if not currentJam:
+        if not currentJamRawData:
             raise JamNotPresent()
-
-        elif not participantData:
+        elif not participantRawData:
             raise JamNotParticipating()
-
-        elif teamData:
+        elif teamRawData:
             raise JamTeamAlreadyPresent()
         
-        bot_globals.TABLE_JAM_CURRENT_TEAMS.insert({
-        'teamName': ekip_adi,
-        'gameURL': "",
-        'submitted': False,
-        'leader': interaction.user.id,
-        'members': []
-        })
+        newJamTeam = JamTeam(ekip_adi,leader=interaction.user.id)
 
-    @bot_instance.tree.command(name="jam-takımları-ekle", description="Jam takımlarını içe aktarır.",guild=bot_globals.GUILD_UNOG)
+        bot_globals.TABLE_JAM_CURRENT_TEAMS.insert(newJamTeam)
+
+        await interaction.response.send_message(f"Ek: {ekip_adi} başarıyla oluşturuldu. ✅",ephemeral=True)
+
+    @bot_instance.tree.command(name="jam-ekipleri-ekle", description="Jam takımlarını içe aktarır.",guild=bot_globals.GUILD_UNOG)
     @discord.app_commands.describe(teams=".csv formatında takımların dosyası")
     @app_commands.check(check_is_jam_mod)
     @app_commands.check(check_is_jam_present)
     async def jam_set_teams(interaction: Interaction, teams: Attachment):
-        jamData = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
-
-        if not jamData:
-            raise JamNotPresent()
-         
-        file_bytes = await teams.read()
-        data = json.loads(file_bytes.decode("utf-8"))
-        category : CategoryChannel = interaction.guild.get_channel(jamData.categoryID)
-        if isinstance(data, dict):
-            for key, item in data.items():
-                await interaction.guild.create_voice_channel(name=key, category=category)
-
-        await interaction.response.send_message("Takımlar başarıyla oluşturuldu.", ephemeral=True, delete_after=30)
+        await ImporterGGJ26.run(interaction,teams)
 
     @bot_instance.tree.command(name="jam-terfi", description="Oyun sayfası eklenmiş olan ekipleri terfi eder ve Jammer rolünü ekler.",guild=bot_globals.GUILD_UNOG)
-    @discord.app_commands.describe(category="Jam'in bulunduğu Kategori Kanalı", teams=".csv formatında takımların dosyası")
     @app_commands.check(check_is_jam_mod)
     @app_commands.check(check_is_jam_present)
-    async def jam_rank_teams(interaction: Interaction, category: CategoryChannel, teams: Attachment):
-        file_bytes = await teams.read()
-        data = json.loads(file_bytes.decode("utf-8"))
-        if isinstance(data, dict):
-            for key, item in data.items():
-                await interaction.guild.create_voice_channel(name=key, category=category)
-
-        await interaction.response.send_message("Takımlar başarıyla oluşturuldu.", ephemeral=True, delete_after=30)
+    async def jam_rank_teams(interaction: Interaction):
+        pass
 #endregion
 
         
