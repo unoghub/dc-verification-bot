@@ -1,6 +1,7 @@
 from discord import Member,Interaction
 from bot_exceptions import JamAlreadyPresent, UserAlreadyVerified, UserNotInJam,UserNotVerified,UserNotBotDev,UserNotHasTopAccess,UserNotJamMod,JamNotPresent,JamNotParticipating,UserAlreadyInJamTeam,UserNotApprover,UserAlreadyInJam
 from tinydb import Query
+from tinydb.table import Document
 import bot_globals
 
 #region conditions
@@ -76,7 +77,12 @@ def is_user_in_jam(user: Member):
     return bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == user.id)
     
 def is_user_in_jam_team(user: Member) -> bool:
-    return bot_globals.TABLE_JAM_CURRENT_TEAMS.get(Query().members.any(user.id) or Query().leader == user.id)
+    Team = Query()
+    participant : Document = is_user_in_jam(user)
+    if participant:
+        return bot_globals.TABLE_JAM_CURRENT_TEAMS.get((Team.members.any(Query().value == participant.doc_id)) |
+            (Team.leader == participant.doc_id))
+    return None
 
 #endregion
 
@@ -178,12 +184,12 @@ def check_can_user_join_jam(interaction : Interaction) -> bool:
 def check_can_user_create_jam_team(interaction : Interaction) -> bool:
     if is_jam_present():
         if is_user_in_jam(interaction.user):
-            raise UserAlreadyInJam()
-        else:
             if is_user_in_jam_team(interaction.user):
                 raise UserAlreadyInJamTeam()
             else:
                 return True
+        else:
+            raise UserNotInJam()
     else:
         raise JamNotPresent()
 #endregion

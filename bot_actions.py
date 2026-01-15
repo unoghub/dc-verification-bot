@@ -1,13 +1,14 @@
 import discord
-from discord import Interaction,Guild,Member,InteractionType,ButtonStyle,Embed, Message
+from discord import Interaction,Guild,Member,InteractionType,ButtonStyle,Embed, Message, PermissionOverwrite, Role, TextChannel, VoiceChannel
 from discord.ui import Modal, TextInput, View, Button, ChannelSelect, RoleSelect
 from discord.ext import tasks
 from tinydb import Query
 from random import choice
+from tinydb.table import Document
 import bot_globals
-from bot_conditions import check_is_approver,is_user_member
-from bot_exceptions import UserNotApprover, UserAlreadyVerified
-from bot_models import UnogMember,ApproveRecord
+from bot_conditions import check_is_approver, is_jam_present,is_user_member
+from bot_exceptions import JamCategoryNotPresent, JamNotPresent, JamTeamAlreadyPresent, JamTeamNotPresent, UserNotApprover, UserAlreadyVerified, UserNotInJam
+from bot_models import Jam, JamParticipant, JamTeam, UnogMember,ApproveRecord
 from bot_views import ApprovalApplyButtonView, ApprovalFormView,ApprovalModal,DenyVerificationModal
 
 async def welcome_member_message(member : Member):
@@ -18,7 +19,7 @@ async def welcome_member_message(member : Member):
             listelen = message.split("%split%")
             message = choice(listelen)
         if "%user%" in message:
-            message = message.replace("%user%", f"{member.nick}")
+            message = message.replace("%user%", f"{str(member)}")
         if "\>" in message:
             message = message.replace("\<", f"<")
 
@@ -67,7 +68,7 @@ async def welcome_member_message(member : Member):
 
 async def approvalForm_applyButton_interaction(interaction : Interaction):
     if not is_user_member(interaction.user):
-        await interaction.response.send_modal(ApprovalModal(approvalModal_callback))
+        await interaction.response.send_modal(ApprovalModal(approvalModal_on_submit))
     else: 
         await interaction.response.send_message(f"Zaten <@&{bot_globals.ROLEID_MEMBER}> rolüne sahipsiniz.",ephemeral=True,delete_after=15)
 
@@ -91,6 +92,8 @@ async def approvalForm_approveButton_interaction(interaction : Interaction):
                            interaction.message.embeds[0].fields[3].value,
                            interaction.message.embeds[0].fields[4].value)
         await add_approvalForm_end_status(interaction.message,interaction.user,True)
+    else:
+        raise UserNotApprover()
 
 async def denyForm_on_submit(interaction : Interaction, deniedMember : Member, reason : str):
 
@@ -106,14 +109,14 @@ async def denyForm_on_submit(interaction : Interaction, deniedMember : Member, r
 async def create_approval_form(unogMember : UnogMember):
     verificationPanelChannel = bot_globals.Server_Unog.get_channel(bot_globals.TEXTCHANNELID_VERIFICATION_PANEL)
     
-    member : Member = bot_globals.Server_Unog.get_member(unogMember.get('id'))
+    member : Member = bot_globals.Server_Unog.get_member(unogMember.id)
 
     embed = Embed(title="Yeni Üye", description=f"<@{member.id}> sunucuya katıldı!", color=choice(bot_globals.COLORS_UNOG))
-    embed.add_field(name="İsim", value=unogMember.get('name'), inline=False)
-    embed.add_field(name="E-mail", value=unogMember.get('email'), inline=False)
-    embed.add_field(name="Doğum Tarihi", value=unogMember.get('birthday'), inline=False)
-    embed.add_field(name="Bulunduğunuz Kurum Veya Ekip", value=unogMember.get('info1'), inline=False)
-    embed.add_field(name="ÜNOG'u Nasıl Keşfettiniz?", value=unogMember.get('info2'), inline=False)
+    embed.add_field(name="İsim", value=unogMember.name, inline=False)
+    embed.add_field(name="E-mail", value=unogMember.email, inline=False)
+    embed.add_field(name="Doğum Tarihi", value=unogMember.birthday, inline=False)
+    embed.add_field(name="Bulunduğunuz Kurum Veya Ekip", value=unogMember.info1, inline=False)
+    embed.add_field(name="ÜNOG'u Nasıl Keşfettiniz?", value=unogMember.info2, inline=False)
     embed.set_thumbnail(url=member.avatar)
 
     view = ApprovalFormView()
@@ -131,7 +134,7 @@ async def disable_approval_form(interaction : Interaction):
     await interaction.message.add_reaction('✅')
     await interaction.response.edit_message(view=view)
 
-async def approvalModal_callback(interaction : Interaction, unogMember : UnogMember):
+async def approvalModal_on_submit(interaction : Interaction, unogMember : UnogMember):
     embed = Embed(title="Talebiniz Alındı!", description="Yetkili tarafından onaylandığında rol ataması yapacağım!", color=choice(bot_globals.COLORS_UNOG))
 
     await interaction.response.send_message(f"", ephemeral=True, delete_after=30, embed=embed)
@@ -151,8 +154,14 @@ async def approve_user(approver : Member,target_user: Member, newName : str = ""
      
     memberRole = bot_globals.Server_Unog.get_role(bot_globals.ROLEID_MEMBER)
 
-    unogMember = UnogMember(target_user.id,name=newName,email=eMail,birthday=birthday,info1=info1,info2=info2)
-    approveRecord = ApproveRecord(target_user.id,approver.id)
+    unogMember = UnogMember(id=target_user.id,
+                            name=newName,
+                            email=eMail,
+                            birthday=birthday,
+                            info1=info1,
+                            info2=info2)
+    approveRecord = ApproveRecord(approvedID=target_user.id,
+                                  approverID=approver.id)
 
     await target_user.add_roles(memberRole)
     await target_user.edit(nick=newName)
@@ -173,14 +182,14 @@ async def msg_approvalForm_decision (approved : Member,decisionMaker : Member ,d
         if decision:
             embed = Embed(title=f"Onaylandı! ✅",description=f"<@{approved.id}>", color=choice(bot_globals.COLORS_UNOG))
             embed.add_field(name="Onaylayan", value=f"<@{decisionMaker.id}>", inline=False)
-            embed.set_thumbnail(approved.avatar)
+            embed.set_thumbnail(url=approved.avatar.url)
             await verificationPanel.send(embed=embed)
         else:
             embed = Embed(title="Reddedildi ❌", description="Kullanıcıya mesaj gönderildi!", color=choice(bot_globals.COLORS_UNOG))
             embed.add_field(name="\u200b", value=f"<@{approved.id}>", inline=False)
             embed.add_field(name="Reddetme Sebebi 🤨", value=additionalInfo, inline=False)
             embed.add_field(name="Reddeden", value=f"<@{decisionMaker.id}>", inline=False)
-            embed.set_thumbnail(approved.avatar)
+            embed.set_thumbnail(url=approved.avatar.url)
 
 @tasks.loop(hours=1)
 async def actives():
@@ -197,3 +206,141 @@ async def actives():
     
 
     print("Actives refreshed")
+
+#region jam
+
+async def create_jam_participant(discordID: int):
+    jamRaw = bot_globals.TABLE_JAM_CURRENT.get(Query()._type=="meta")
+    if jamRaw is None:
+        return
+    jam : Jam = Jam(mapping=jamRaw)
+    bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.upsert(JamParticipant(discordID=discordID,teamID=-1),Query().discordID == discordID)
+    participantMember : Member = bot_globals.Server_Unog.get_member(discordID)
+    participantRole : Role = bot_globals.Server_Unog.get_role(jam.participantRoleID)
+    await participantMember.add_roles(participantRole)
+
+async def delete_jam_participant(discordID: int):
+    
+    jamRaw = bot_globals.TABLE_JAM_CURRENT.get(Query()._type=="meta")
+    participantRaw = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == discordID)
+
+    if jamRaw is None:
+        return
+
+    if not participantRaw:
+        return
+    
+    jam : Jam = Jam(mapping=jamRaw)
+    participant : JamParticipant = JamParticipant(mapping=participantRaw)
+    
+    if participant.teamID != -1:
+        teamDoc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(doc_id=participant.teamID)
+        if teamDoc:
+            jamTeam = JamTeam(mapping=teamDoc)
+
+            jamTeam.remove_participant(discordID)
+            if jamTeam.isEmpty:
+                delete_jam_team(teamDoc.doc_id)
+
+    bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.remove(Query().discordID == discordID)
+    participantMember : Member = bot_globals.Server_Unog.get_member(discordID)
+    participantRole : Role = bot_globals.Server_Unog.get_role(jam.participantRoleID)
+    await participantMember.remove_roles(participantRole)
+
+async def create_jam_team(teamName : str) -> int:
+    teamName = teamName.strip().lower().replace(" ","-")
+    dupe = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(Query().teamName == teamName)
+    if not dupe:
+        jam_doc = is_jam_present()
+        if jam_doc:
+            jamData = Jam(mapping=jam_doc)
+            jamCategory = bot_globals.Server_Unog.get_channel(jamData.categoryID)
+            if jamCategory:
+                memberRole = bot_globals.Server_Unog.get_role(bot_globals.ROLEID_MEMBER)
+                everyoneRole = bot_globals.Server_Unog.default_role
+                voiceChannel : VoiceChannel = await jamCategory.create_voice_channel(
+                    teamName,overwrites={everyoneRole:bot_globals.PERMISSION_OVERWRITE_DEFAULT_ROLE,
+                                         memberRole:bot_globals.PERMISSION_OVERWRITE_JAM_VERIFIEDMEMBER_VC})
+                # textChannel : TextChannel = await jamCategory.create_text_channel(
+                #     teamName,overwrites={everyoneRole:bot_globals.PERMISSION_OVERWRITE_DEFAULT_ROLE})
+                # await textChannel.set_permissions(memberRole,overwrite=bot_globals.PERMISSION_OVERWRITE_JAM_VERIFIEDMEMBER_VC)
+                return bot_globals.TABLE_JAM_CURRENT_TEAMS.insert(JamTeam(teamName=teamName,
+                                                                    submitted=False,
+                                                                    gameURL="",
+                                                                    leader=-1,
+                                                                    members=[],
+                                                                    textChannelID=-1,
+                                                                    voiceChannelID=voiceChannel.id,
+                                                                    joinRequests=[]))
+            raise JamCategoryNotPresent()
+        raise JamNotPresent()
+    else:
+        raise JamTeamAlreadyPresent()
+
+async def delete_jam_team(team_id : int):
+    team_doc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(doc_id=team_id)
+    if team_doc:
+        team = JamTeam(mapping=team_doc)
+        voiceChannel : VoiceChannel = bot_globals.Server_Unog.get_channel(team.voiceChannelID)
+        await voiceChannel.delete()
+        if team.leader != -1:
+            bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.update({"teamID":-1},doc_ids=[team.leader])
+        bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.update({"teamID":-1},doc_ids=team.members)
+        
+        bot_globals.TABLE_JAM_CURRENT_TEAMS.remove(doc_ids=[team_id])
+    pass
+
+async def add_participant_to_jam_team(participant_id: int,team_id: int,send_message : bool = False):
+
+    team_raw = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(doc_id=team_id)
+    participant_raw = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(doc_id=participant_id)
+
+    if participant_raw and team_raw:
+        team = JamTeam(mapping=team_raw)
+        participant_discordID = participant_raw.get('discordID')
+        team.add_participant(participant_id)
+        participant_member : Member = bot_globals.Server_Unog.get_member(participant_discordID)
+
+        teamvc = bot_globals.Server_Unog.get_channel(team.voiceChannelID)
+            
+        new_overwrites = teamvc.overwrites
+        new_overwrites[participant_member] = bot_globals.PERMISSION_OVERWRITE_JAM_TEAM_MEMBER_VC
+        await teamvc.edit(overwrites=new_overwrites)
+
+        bot_globals.TABLE_JAM_CURRENT_TEAMS.update(team,doc_ids=[team_id])
+        participant_raw['teamID'] = team_id
+        bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.update(participant_raw,doc_ids=[participant_id])
+        if send_message:
+            await teamvc.send(f"**Yeni ekip üyesi eklendi**: {participant_member.mention}")
+
+async def remove_participant_from_jam_team(participant_id: int, send_message : bool = False, interaction : Interaction | None = None):
+    participant_doc = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(doc_id=participant_id)
+    if participant_doc:
+        team_id = participant_doc.get('teamID')
+        team_doc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(doc_id=team_id)
+        if team_doc:
+            team = JamTeam(mapping=team_doc)
+            participant_discordID = participant_doc.get('discordID')
+            participant_member : Member = bot_globals.Server_Unog.get_member(participant_discordID)
+            participant_doc['teamID'] = -1
+            team.remove_participant(participant_id)
+
+            teamvc : VoiceChannel = bot_globals.Server_Unog.get_channel(team.voiceChannelID)
+            
+            new_overwrites = teamvc.overwrites
+            new_overwrites.pop(participant_member,None)
+            await teamvc.edit(overwrites=new_overwrites)
+            if team.isEmpty:
+                await delete_jam_team(team_doc.doc_id)
+            else:
+                bot_globals.TABLE_JAM_CURRENT_TEAMS.update(team,doc_ids=[team_doc.doc_id])
+                bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.update(participant_doc,doc_ids=[participant_doc.doc_id])
+                if send_message:
+                    await teamvc.send(f"{participant_member.mention} ekibinizden ayrıldı.")
+            if interaction:
+                await interaction.response.send_message("Ekipten çıktınız.",ephemeral=True,delete_after=15)
+        else:
+            raise JamTeamNotPresent()
+    else:
+        raise UserNotInJam()
+#endregion

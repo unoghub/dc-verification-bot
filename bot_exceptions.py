@@ -74,3 +74,11 @@ class JamAlreadyParticipating(AppCommandError):
 class JamTeamAlreadyPresent(AppCommandError):
     def __init__(self, message="Bu ekip adı kullanılıyor."):
         super().__init__(message)
+
+class JamTeamNotPresent(AppCommandError):
+    def __init__(self, message="Bir ekibiniz yok."):
+        super().__init__(message)
+
+class JamCategoryNotPresent(AppCommandError):
+    def __init__(self, message="Bu jamin kategorisi bulunamıyor."):
+        super().__init__(message)

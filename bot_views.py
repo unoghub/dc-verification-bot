@@ -12,6 +12,7 @@ from bot_conditions import is_user_member
 #region views
 
 class ApprovalApplyButtonView(View):
+
     def __init__(self):
         super().__init__(timeout=None)
 
@@ -21,9 +22,7 @@ class ApprovalApplyButtonView(View):
         interaction: discord.Interaction,
         button: Button
     ):
-        if is_user_member(interaction.user):
-            raise UserAlreadyVerified()
-        await interaction.response.send_modal(ApprovalModal())
+        pass
 
 class ApprovalFormView(View):
 
@@ -80,7 +79,12 @@ class ApprovalModal(Modal):
     info2 = TextInput(label="ÜNOG'u Nasıl Keşfettiniz?", custom_id="info2", required=False)
 
     async def on_submit(self, interaction: Interaction):
-        unogMember = UnogMember(interaction.user.id,self.name.value.strip().title(),self.email.value.strip().lower(),self.birthday.value.strip(),self.info1.value.strip(),self.info2.value.strip())
+        unogMember = UnogMember(id=interaction.user.id,
+                                name=self.name.value,
+                                email=self.email.value,
+                                birthday=self.birthday.value,
+                                info1=self.info1.value,
+                                info2=self.info2.value)
         await self._callback(interaction,unogMember)
         
 

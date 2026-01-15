@@ -3,15 +3,16 @@ import json
 import os
 from random import choice
 from discord.ui import View,Button
-from discord import Embed,File,Attachment,ButtonStyle,Interaction,Member,Role,Guild,CategoryChannel,Object
+from discord import Embed,File,Attachment,ButtonStyle,Interaction,Member,Role,Guild,CategoryChannel,Object,PermissionOverwrite
 from discord.ext.commands import Context,Bot,check
 from openpyxl import Workbook
 from tinydb import Query
+from tinydb.table import Document
 import bot_globals
 from bot_views import ApproverRoleSelect, MemberRoleSelect, VerificationChannelSelect, VerificationPanelChannelSelect, WelcomeChannelSelect, ApprovalApplyButtonView
 from discord.app_commands.checks import has_any_role,has_role
 from discord import app_commands
-from bot_actions import approvalForm_applyButton_interaction,approve_user
+from bot_actions import add_participant_to_jam_team, approvalForm_applyButton_interaction,approve_user, create_jam_team, remove_participant_from_jam_team
 from bot_exceptions import reply_no_permission,UserIsNull,JamAlreadyPresent,JamAlreadyParticipating,JamTeamAlreadyPresent,JamNotPresent,JamNotParticipating,UserNotApprover,UserAlreadyVerified
 from bot_conditions import check_can_user_create_jam_team, check_can_user_join_jam, check_is_approver,check_is_jam_mod,check_is_botdev, check_is_jam_present,check_is_member,check_has_top_access, check_is_no_jam_present, is_user_member,is_jam_present,is_user_in_jam,is_user_in_jam_team
 from bot_events import actives
@@ -184,6 +185,32 @@ def setup_commands(bot_instance: Bot):
 
         await interaction.response.send_message('Excell dosyası oluşturuldu/güncellendi.', ephemeral=True, delete_after=180, file=attach)
 
+    @bot_instance.tree.command(name="veritabanı-guncelle", description="ÜNOG veritabanında gerekli olan migration'ları çağırır, veritabanını düzeltir.",guild=bot_globals.GUILD_UNOG)
+    @app_commands.check(check_is_botdev)
+    async def migrate_database(interaction: Interaction):
+
+        await interaction.response.defer(ephemeral=True)
+
+        for doc in bot_globals.TABLE_MEMBERS:
+            if "memberinfo" in doc:
+                bot_globals.TABLE_MEMBERS.update(
+                    lambda d: d.pop("memberinfo", None),
+                    doc_ids=[doc.doc_id]
+                )
+            if "ret sebebi" in doc:
+                bot_globals.TABLE_MEMBERS.update(lambda d: d.pop("ret sebebi", None),doc_ids=[doc.doc_id])
+            if "reddeden" in doc:
+                bot_globals.TABLE_MEMBERS.update(lambda d: d.pop("reddeden", None),doc_ids=[doc.doc_id])
+            if "inserver" in doc:
+                if doc.get('inserver') == "no":
+                    bot_globals.TABLE_MEMBERS.remove(doc_ids=[doc.doc_id])
+                else:
+                    bot_globals.TABLE_MEMBERS.update(lambda d: d.pop("inserver", None),doc_ids=[doc.doc_id])
+        await interaction.followup.send(
+        "Veritabanı migrasyonu başarıyla yapıldı. ✅",
+        ephemeral=True
+        )
+
     @bot_instance.tree.command(name="onayla", description="Kullanıcıyı manuel onaylar.", guild=bot_globals.GUILD_UNOG)
     @discord.app_commands.describe(target_user="Onaylanan kullanıcı",usernick="Yeni İsmi")
     @app_commands.check(check_is_approver)
@@ -239,7 +266,8 @@ def setup_commands(bot_instance: Bot):
                         generalTextChannelID=textChannel.id,
                         participantRoleID=participantRole.id,
                         jammerRoleID=jammerRole.id,
-                        description=aciklama)
+                        description=aciklama,
+                        url=jam_url)
 
         bot_globals.TABLE_JAM_CURRENT.insert(jam)
 
@@ -251,16 +279,35 @@ def setup_commands(bot_instance: Bot):
     @app_commands.check(check_is_member)
     async def jam_info(interaction : Interaction):
         jamRawData = is_jam_present()
+        participant = is_user_in_jam(interaction.user)
+        string_teaminfo : str = ""
+        if participant:
+            jam_team_doc = is_user_in_jam_team(interaction.user)
+            string_teaminfo = "**Bu jam'de bulunuyorsunuz.** ✅ \n\n **Ekibiniz:** "
+            if jam_team_doc:
+                jam_team : JamTeam = JamTeam(mapping=jam_team_doc)
+                string_teaminfo += f"<#{jam_team.voiceChannelID}>\n"
+                participant_leader = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(doc_id=jam_team.leader)
+                string_teaminfo += f"**Ekip Lideri:** <@{participant_leader.get('discordID')}>\n"
+                string_teaminfo += "**Ekip Üyeleri:**\n"
+                for item in jam_team.members:
+                    string_teaminfo += f"<@{bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(doc_id=item).get('discordID')}>\n"
+            else:
+                string_teaminfo += "Yok ❌"   
+                    
+        else:
+            string_teaminfo = "Bu jam'de bulunmuyorsunuz. ❌"
+
         embed : Embed = None
         if jamRawData:
-            jamData : Jam = Jam(data=jamRawData)
+            jamData : Jam = Jam(mapping=jamRawData)
             embed = Embed(title=jamData.longName + " 🕹",
                           color=choice(bot_globals.COLORS_UNOG),
-                          description=jamData.description)
-            embed.add_field(name="Başlangıç Zamanı:",value=f"<t:{jamData.startUnix}:d>")
-            embed.add_field(name='Bitiş Zamanı:',value=f"<t:{jamData.endUnix}:d>")
-            embed.add_field(name='Katılımcı Rolü:',value=f"<@&{jamData.participantRoleID}>")
-            embed.add_field(name='Web Adresi:',value=jamData.url)
+                          description=jamData.description + f"\n\n{string_teaminfo}")
+            embed.add_field(name="🏁 Başlangıç Zamanı:",value=f"<t:{jamData.startUnix}>")
+            embed.add_field(name='🚩 Bitiş Zamanı:',value=f"<t:{jamData.endUnix}>")
+            embed.add_field(name='👤 Katılımcı Rolü:',value=f"<@&{jamData.participantRoleID}>")
+            embed.add_field(name='🌏 Web Adresi:',value=jamData.url)
             await interaction.response.send_message(embed=embed,ephemeral=True)
         else:
             raise JamNotPresent()
@@ -270,19 +317,21 @@ def setup_commands(bot_instance: Bot):
     async def jam_help(interaction : Interaction):
         embed : Embed = Embed(title="Jam Komutları",description="Aşağıda Jamle ilgili bütün komutların açıklamaları bulunmaktadır.",color=choice(bot_globals.COLORS_UNOG))
         embed.add_field(name="/jam-bilgi",value="Mevcut jamle ilgili tüm bilgileri gösterir.")
-        embed.add_field(name="/jam-yarat",value=f"**Kullanabilen Roller:**<@&{bot_globals.ROLEID_DIRECTOR}>, <@&{bot_globals.ROLEID_JAM_MOD}>\nYeni bir jam oluşturur.\nHerhangi bir anda sadece bir tane jam bulunabilir.")
-        embed.add_field(name="/jam-ekipleri-ekle",value=f"**Kullanabilen Roller:**<@&{bot_globals.ROLEID_DIRECTOR}>, <@&{bot_globals.ROLEID_JAM_MOD}>\nMevcut jame dışarıdan ekip bilgilerini ekler.\nEklenilen dosyanın .csv formatında olması gerekir.")
+        embed.add_field(name="/jam-katıl",value="Mevcut jame katılırsınız.")
+        #embed.add_field(name="/jam-yarat",value=f"**Kullanabilen Roller:**<@&{bot_globals.ROLEID_DIRECTOR}>, <@&{bot_globals.ROLEID_JAM_MOD}>\nYeni bir jam oluşturur.\nHerhangi bir anda sadece bir tane jam bulunabilir.")
+        #embed.add_field(name="/jam-ekipleri-ekle",value=f"**Kullanabilen Roller:**<@&{bot_globals.ROLEID_DIRECTOR}>, <@&{bot_globals.ROLEID_JAM_MOD}>\nMevcut jame dışarıdan ekip bilgilerini ekler.\nEklenilen dosyanın .csv formatında olması gerekir.")
         embed.add_field(name="/jam-ekip-kur",value=f"**Jam'e katılan her üye kullanabilir**\nKatıldığınız jamde bir ekip oluşturur.\nBir jamde her katılımcının bir ekipte bulunması gerekir")
-        embed.add_field(name="/jam-bitir",value=f"Kullanabilen Roller:<@&{bot_globals.ROLEID_DIRECTOR}>, <@&{bot_globals.ROLEID_JAM_MOD}>\nMevcut jami bitirir ve tüm verileri silinir.\nYeni bir jam başlatılması için ilk önce jamin bitirilmesi gerekir.")
-        embed.add_field(name="/jam-bitir",value=f"Kullanabilen Roller:<@&{bot_globals.ROLEID_DIRECTOR}>, <@&{bot_globals.ROLEID_JAM_MOD}>\nMevcut jamde submission yapan ekip üyelerini terfi ederek kalıcı rol ataması yapar.\nJam'in herhangi bir esnasında kullanılabilir.")
+        #embed.add_field(name="/jam-bitir",value=f"Kullanabilen Roller:<@&{bot_globals.ROLEID_DIRECTOR}>, <@&{bot_globals.ROLEID_JAM_MOD}>\nMevcut jami bitirir ve tüm verileri silinir.\nYeni bir jam başlatılması için ilk önce jamin bitirilmesi gerekir.")
+        #embed.add_field(name="/jam-terfi",value=f"Kullanabilen Roller:<@&{bot_globals.ROLEID_DIRECTOR}>, <@&{bot_globals.ROLEID_JAM_MOD}>\nMevcut jamde submission yapan ekip üyelerini terfi ederek kalıcı rol ataması yapar.\nJam'in herhangi bir esnasında kullanılabilir.")
         await interaction.response.send_message(embed=embed,ephemeral=True)
     
     @bot_instance.tree.command(name="jam-bitir", description="Mevcut jam'i bitirir, Dikkat: bütün jam verisi silinir.",guild=bot_globals.GUILD_UNOG)
     @app_commands.check(check_is_jam_mod)
     @app_commands.check(check_is_jam_present)
     async def jam_end(interaction : Interaction):
-        jamData = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
-        categoryID : int = jamData.get('categoryID')
+        jam_doc : Document = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
+        jam : Jam = Jam(mapping=jam_doc)
+        categoryID : int = jam_doc.get('categoryID')
         for i in interaction.guild.categories:
             if i.id == categoryID:
                 for j in i.channels:
@@ -293,7 +342,8 @@ def setup_commands(bot_instance: Bot):
         bot_globals.TABLE_JAM_CURRENT.truncate()
         bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.truncate()
         bot_globals.TABLE_JAM_CURRENT_TEAMS.truncate()
-
+        role_participant : Role = await interaction.guild.get_role(jam.participantRoleID)
+        await role_participant.delete()
         await interaction.response.send_message("Jam başarıyla bitirildi.",ephemeral=True)
 
     @bot_instance.tree.command(name="jam-katıl", description="Mevcut jame katılırsınız.",guild=bot_globals.GUILD_UNOG)
@@ -301,7 +351,7 @@ def setup_commands(bot_instance: Bot):
     @app_commands.check(check_can_user_join_jam)
     async def jam_join(interaction : Interaction):
 
-        currentJam : Jam = Jam(data=bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta"))
+        currentJam : Jam = Jam(mapping=bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta"))
         jamParticipantRoleID : int = currentJam.participantRoleID
         jamParticipantRole : Role = interaction.guild.get_role(jamParticipantRoleID)
 
@@ -318,24 +368,63 @@ def setup_commands(bot_instance: Bot):
     @app_commands.check(check_can_user_create_jam_team)
     async def jam_create_team(interaction : Interaction, ekip_adi : str ):
 
-        ekip_adi = ekip_adi.strip().lower()
-        currentJamRawData = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
-        participantRawData = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.contains(Query().discordID == interaction.user.id)
-        teamRawData = bot_globals.TABLE_JAM_CURRENT_TEAMS.contains(Query().teamName == ekip_adi)
-
-        if not currentJamRawData:
-            raise JamNotPresent()
-        elif not participantRawData:
-            raise JamNotParticipating()
-        elif teamRawData:
-            raise JamTeamAlreadyPresent()
+        participant = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == interaction.user.id)
         
-        newJamTeam = JamTeam(ekip_adi,leader=interaction.user.id)
+        team_id : int = await create_jam_team(ekip_adi)
+        await add_participant_to_jam_team(participant_id=participant.doc_id,team_id=team_id)
 
-        bot_globals.TABLE_JAM_CURRENT_TEAMS.insert(newJamTeam)
+        await interaction.response.send_message(f"Ekip: {ekip_adi} başarıyla oluşturuldu. ✅\n Artık oluşturacağınız bu ekibe katılım isteklerini yollatabilirsiniz.\n**Not:** Ekibinizle ilgili komutları ekibinizin ses kanalında çağırmanız gerekir.",ephemeral=True)
 
-        await interaction.response.send_message(f"Ek: {ekip_adi} başarıyla oluşturuldu. ✅",ephemeral=True)
+    @bot_instance.tree.command(name="jam-ekipten-çık", description="Bulunduğunuz jam ekibinden çıkış yaparsınız.",guild=bot_globals.GUILD_UNOG)
+    @app_commands.check(check_is_member)
+    async def jam_leave_team(interaction : Interaction):
+        participant_doc = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == interaction.user.id)
+        if participant_doc:
+            await remove_participant_from_jam_team(participant_doc.doc_id,True,interaction=interaction)
 
+    @bot_instance.tree.command(name="jam-ekibe-katıl", description="Yazdığınız ekibe katılma isteği gönderir.",guild=bot_globals.GUILD_UNOG)
+    @discord.app_commands.describe(ekip_adi="Katılacağınız ekibinizin adı")
+    @app_commands.check(check_is_member)
+    @app_commands.check(check_can_user_create_jam_team)
+    async def jam_join_team(interaction : Interaction, ekip_adi : str ):
+        ekip_adi = ekip_adi.strip().lower().replace(" ","-")
+        participant_doc = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == interaction.user.id)
+        targetTeamDoc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(Query().teamName == ekip_adi)
+        if targetTeamDoc is not None:
+            targetTeam : JamTeam = JamTeam(mapping=targetTeamDoc)
+            voiceChannel = interaction.guild.get_channel(targetTeam.voiceChannelID)
+            if participant_doc.doc_id in targetTeam.joinRequests:
+                await interaction.response.send_message("Bu ekibe bir istek zaten gönderdiniz, kabul edilmesi için ekip üyeleriyle iletişime geçebilirsiniz.",ephemeral=True)
+                return
+            else:
+                await voiceChannel.send(f"Hey! {interaction.user.mention} isimli kullanıcı ekibinize katılmak istiyor.\n\n Kabul etmek için X komutunu kullanabilirsiniz.")
+                targetTeam.joinRequests.append(participant_doc.doc_id)
+                bot_globals.TABLE_JAM_CURRENT_TEAMS.update({'joinRequests':targetTeam.joinRequests},doc_ids=[targetTeamDoc.doc_id])
+                await interaction.response.send_message(f"**{ekip_adi}** Ekibine davetiyeniz başarıyla gönderildi!",ephemeral=True)
+        else:
+            #raise JamTeamNotPresent(team_name)
+            await interaction.response.send_message("Bu isimde bir ekip bulunmuyor, ekip adını doğru yazdığınızdan emin olun.",ephemeral=True,delete_after=20)
+
+    @bot_instance.tree.command(name="jam-isteği-kabul-et", description="Yazdığınız ekibe katılma isteği gönderir.",guild=bot_globals.GUILD_UNOG)
+    @discord.app_commands.describe(kullanici_adi="İstek yollayan kullanıcının discord adı (örn:.krenel)")
+    @app_commands.check(check_is_member)
+    async def jam_accept_invitation(interaction : Interaction, kullanici_adi : str ):
+        kullanici_adi = kullanici_adi.strip()
+        invoker_participant_doc = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == interaction.user.id)
+        target_member = bot_globals.Server_Unog.get_member_named(kullanici_adi)
+        target_participant_doc = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == target_member.id)
+        team_doc : Document = is_user_in_jam_team(interaction.user)
+        if team_doc:
+            if invoker_participant_doc:
+                if target_participant_doc:
+                    if team_doc.get("leader") == invoker_participant_doc.doc_id:
+                        team = JamTeam(mapping=team_doc)
+                        if target_participant_doc.doc_id in team.joinRequests:
+                            team.joinRequests.remove(target_participant_doc.doc_id)
+                            bot_globals.TABLE_JAM_CURRENT_TEAMS.update({'joinRequests':team.joinRequests},doc_ids=[team_doc.doc_id])
+                            await add_participant_to_jam_team(target_participant_doc.doc_id,team_doc.doc_id,True)
+                            return
+        raise NotImplementedError()
     @bot_instance.tree.command(name="jam-ekipleri-ekle", description="Jam takımlarını içe aktarır.",guild=bot_globals.GUILD_UNOG)
     @discord.app_commands.describe(teams=".csv formatında takımların dosyası")
     @app_commands.check(check_is_jam_mod)
