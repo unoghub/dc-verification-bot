@@ -1,6 +1,6 @@
 from discord import Member,Interaction
 from tinydb import  Query
-from bot_actions import actives
+from bot_actions import actives,approve_user,create_jam_participant
 import bot_globals
 
 def setup_events():
@@ -32,7 +32,13 @@ def setup_events():
         
     @bot_globals.UnogBot.event
     async def on_member_join(member : Member):
-        user = bot_globals.TABLE_MEMBERS.search(Query().id == member.id)
+        user = bot_globals.TABLE_MEMBERS.get(Query().id == member.id)
         if user: #member is in db
-            if user['approved'] == True:
-                await member.add_roles(bot_globals.ROLEID_MEMBER)
+            memberRole = bot_globals.Server_Unog.get_channel(bot_globals.ROLEID_MEMBER)
+            await member.add_roles(memberRole)
+        else:
+
+            form_doc = bot_globals.TABLE_JAM_FORMS.get(Query().username == member.name)
+            if form_doc:
+                await approve_user(None,member,form_doc.get('name'),form_doc.get('email'),form_doc.get('birthday'),"Jam formundan katıldım")
+                await create_jam_participant(member.id)

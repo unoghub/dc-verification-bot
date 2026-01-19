@@ -4,7 +4,9 @@ from discord import Interaction,Attachment
 from discord import app_commands
 import bot_globals
 import tinydb
-
+from tinydb import Query
+from bot_models import UnogMember
+from bot_globals import TABLE_JAM_FORMS
 class ImporterGGJ26():
     """ Teams Importer for GGJ26 """
     async def run(interaction : Interaction, attachment : Attachment):
@@ -28,10 +30,10 @@ class ImporterGGJ26():
             preference = row["Katılım tercihiniz nedir?"]
             discord_username = row["Discord kullanıcı adınız"]
             teamname = row["Takımınızın adı var mı?"]
-
-            print(f"Row {row_number}: {name_surname} {email} {birthday} {preference} {discord_username} {teamname}")
+            if preference == "Online (ÜNOG Discord)":
+                TABLE_JAM_FORMS.upsert({"name":name_surname.strip().title(),"email":email.strip(),"birthday":birthday,"username":discord_username.strip().removeprefix("@"),"teamName":teamname.strip().lower().replace(" ","-")},Query().username == discord_username)
 
         await interaction.response.send_message(
-            "CSV processed successfully ✅",
-            ephemeral=True
+            "İçe aktarım başarılı ✅",
+            ephemeral=True,delete_after=30
         )

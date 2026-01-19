@@ -82,3 +82,11 @@ class JamTeamNotPresent(AppCommandError):
 class JamCategoryNotPresent(AppCommandError):
     def __init__(self, message="Bu jamin kategorisi bulunamıyor."):
         super().__init__(message)
+
+class JamSubmissionAlreadyPresent(AppCommandError):
+    def __init__(self, message="Ekibinizin gönderimi bir başka takım tarafından yapılmıştır. Bir aksilik olduğunu düşünüyorsanız moderatörlere bilirebilirsiniz."):
+        super().__init__(message)
+
+class UserNotJamTeamLeader(AppCommandError):
+    def __init__(self, message="Bu komutu kullanmak için lideri olduğunuz bir ekip gerekmektedir."):
+        super().__init__(message)

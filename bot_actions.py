@@ -7,7 +7,7 @@ from random import choice
 from tinydb.table import Document
 import bot_globals
 from bot_conditions import check_is_approver, is_jam_present,is_user_member
-from bot_exceptions import JamCategoryNotPresent, JamNotPresent, JamTeamAlreadyPresent, JamTeamNotPresent, UserNotApprover, UserAlreadyVerified, UserNotInJam
+from bot_exceptions import JamCategoryNotPresent, JamNotPresent, JamTeamAlreadyPresent, JamTeamNotPresent, UserNotApprover, UserAlreadyVerified, UserNotInJam, JamSubmissionAlreadyPresent
 from bot_models import Jam, JamParticipant, JamTeam, UnogMember,ApproveRecord
 from bot_views import ApprovalApplyButtonView, ApprovalFormView,ApprovalModal,DenyVerificationModal
 
@@ -85,12 +85,13 @@ async def approvalForm_approveButton_interaction(interaction : Interaction):
         memberID = int(interaction.message.embeds[0].description.split()[0].removeprefix("<@").removesuffix(">"))
         member = interaction.guild.get_member(memberID)
         
-        await approve_user(interaction.user,member,
-                           interaction.message.embeds[0].fields[0].value,
-                           interaction.message.embeds[0].fields[1].value,
-                           interaction.message.embeds[0].fields[2].value,
-                           interaction.message.embeds[0].fields[3].value,
-                           interaction.message.embeds[0].fields[4].value)
+        await approve_user(approver=interaction.user,
+                           target_user=member,
+                           newName=interaction.message.embeds[0].fields[0].value,
+                           eMail=interaction.message.embeds[0].fields[1].value,
+                           birthday=interaction.message.embeds[0].fields[2].value,
+                           info1=interaction.message.embeds[0].fields[3].value,
+                           info2=interaction.message.embeds[0].fields[4].value)
         await add_approvalForm_end_status(interaction.message,interaction.user,True)
     else:
         raise UserNotApprover()
@@ -160,20 +161,24 @@ async def approve_user(approver : Member,target_user: Member, newName : str = ""
                             birthday=birthday,
                             info1=info1,
                             info2=info2)
-    approveRecord = ApproveRecord(approvedID=target_user.id,
+    approveRecord = None
+    
+    if approver:
+        approveRecord = ApproveRecord(approvedID=target_user.id,
                                   approverID=approver.id)
+        bot_globals.TABLE_APPROVES.insert(approveRecord)
+        if bot_globals.LOG_APPROVES:
+            await msg_approvalForm_decision(target_user,approver)
 
     await target_user.add_roles(memberRole)
     await target_user.edit(nick=newName)
     
     bot_globals.TABLE_MEMBERS.upsert(unogMember,Query().id == target_user.id)
-    bot_globals.TABLE_APPROVES.insert(approveRecord)
 
     if bot_globals.WELCOME_NEWCOMERS:
          await welcome_member_message(target_user)
 
-    if bot_globals.LOG_APPROVES:
-        await msg_approvalForm_decision(target_user,approver)
+    
 
 async def msg_approvalForm_decision (approved : Member,decisionMaker : Member ,decision : bool = True,additionalInfo : str = ""):
     verificationPanel = bot_globals.Server_Unog.get_channel(bot_globals.TEXTCHANNELID_VERIFICATION_PANEL)
@@ -208,6 +213,20 @@ async def actives():
     print("Actives refreshed")
 
 #region jam
+
+def submit_jam_project(team_doc_id : int, submissionURL : str):
+    team_doc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(doc_id=team_doc_id)
+    duplicate_checker = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(Query().gameURL == submissionURL)
+    if not team_doc:
+        raise JamTeamNotPresent()
+    if duplicate_checker and duplicate_checker.doc_id != team_doc:
+        raise JamSubmissionAlreadyPresent()
+    team : JamTeam = JamTeam(mapping=team_doc)
+    team.submitted = True
+    team.gameURL = submissionURL
+    bot_globals.TABLE_JAM_CURRENT_TEAMS.update(team,doc_ids=[team_doc.doc_id])
+    
+
 
 async def create_jam_participant(discordID: int):
     jamRaw = bot_globals.TABLE_JAM_CURRENT.get(Query()._type=="meta")

@@ -12,8 +12,8 @@ import bot_globals
 from bot_views import ApproverRoleSelect, MemberRoleSelect, VerificationChannelSelect, VerificationPanelChannelSelect, WelcomeChannelSelect, ApprovalApplyButtonView
 from discord.app_commands.checks import has_any_role,has_role
 from discord import app_commands
-from bot_actions import add_participant_to_jam_team, approvalForm_applyButton_interaction,approve_user, create_jam_team, remove_participant_from_jam_team
-from bot_exceptions import reply_no_permission,UserIsNull,JamAlreadyPresent,JamAlreadyParticipating,JamTeamAlreadyPresent,JamNotPresent,JamNotParticipating,UserNotApprover,UserAlreadyVerified
+from bot_actions import add_participant_to_jam_team, approvalForm_applyButton_interaction,approve_user, create_jam_team, remove_participant_from_jam_team,submit_jam_project
+from bot_exceptions import reply_no_permission,UserIsNull,JamAlreadyPresent,JamAlreadyParticipating,JamTeamAlreadyPresent,JamNotPresent,JamNotParticipating,UserNotApprover,UserAlreadyVerified,UserNotJamTeamLeader
 from bot_conditions import check_can_user_create_jam_team, check_can_user_join_jam, check_is_approver,check_is_jam_mod,check_is_botdev, check_is_jam_present,check_is_member,check_has_top_access, check_is_no_jam_present, is_user_member,is_jam_present,is_user_in_jam,is_user_in_jam_team
 from bot_events import actives
 from bot_models import Jam, JamParticipant, JamTeam
@@ -293,7 +293,7 @@ def setup_commands(bot_instance: Bot):
                 for item in jam_team.members:
                     string_teaminfo += f"<@{bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(doc_id=item).get('discordID')}>\n"
             else:
-                string_teaminfo += "Yok ❌"   
+                string_teaminfo += "Yok ❌"
                     
         else:
             string_teaminfo = "Bu jam'de bulunmuyorsunuz. ❌"
@@ -342,6 +342,7 @@ def setup_commands(bot_instance: Bot):
         bot_globals.TABLE_JAM_CURRENT.truncate()
         bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.truncate()
         bot_globals.TABLE_JAM_CURRENT_TEAMS.truncate()
+        bot_globals.TABLE_JAM_FORMS.truncate()
         role_participant : Role = await interaction.guild.get_role(jam.participantRoleID)
         await role_participant.delete()
         await interaction.response.send_message("Jam başarıyla bitirildi.",ephemeral=True)
@@ -425,12 +426,28 @@ def setup_commands(bot_instance: Bot):
                             await add_participant_to_jam_team(target_participant_doc.doc_id,team_doc.doc_id,True)
                             return
         raise NotImplementedError()
+
     @bot_instance.tree.command(name="jam-ekipleri-ekle", description="Jam takımlarını içe aktarır.",guild=bot_globals.GUILD_UNOG)
     @discord.app_commands.describe(teams=".csv formatında takımların dosyası")
     @app_commands.check(check_is_jam_mod)
     @app_commands.check(check_is_jam_present)
     async def jam_set_teams(interaction: Interaction, teams: Attachment):
         await ImporterGGJ26.run(interaction,teams)
+
+    @bot_instance.tree.command(name="jam-ekip-submit", description="Ekibinizle bitmiş jam oyununuzu yollarsınız. (Sadece Ekip Lideri kullanabilir)",guild=bot_globals.GUILD_UNOG)
+    @discord.app_commands.describe(submission_url="Bitmiş oyununuzun URL'si.")
+    @app_commands.check(check_is_member)
+    async def jam_team_submit(interaction : Interaction,submission_url : str):
+        participant_doc = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == interaction.user.id)
+        if participant_doc:
+            team_doc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(Query().leader == participant_doc.doc_id)
+            if team_doc:
+                submit_jam_project(team_doc.doc_id,submission_url)
+                await interaction.response.send_message("Başarılı!",ephemeral=True,delete_after=15)
+            else:
+                raise UserNotJamTeamLeader()
+        else:
+            raise JamNotParticipating()
 
     @bot_instance.tree.command(name="jam-terfi", description="Oyun sayfası eklenmiş olan ekipleri terfi eder ve Jammer rolünü ekler.",guild=bot_globals.GUILD_UNOG)
     @app_commands.check(check_is_jam_mod)
