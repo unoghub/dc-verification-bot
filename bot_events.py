@@ -1,9 +1,20 @@
-from discord import Member,Interaction
+from discord import Member,Interaction,Object
 from tinydb import  Query
 from bot_actions import actives,approve_user,create_jam_participant
 import bot_globals
 
 def setup_events():
+
+    @bot_globals.UnogBot.event
+    async def setup_hook():
+        # Load cogs here
+        print("Tree commands:", bot_globals.UnogBot.tree.get_commands())
+        commands = await bot_globals.UnogBot.tree.sync(guild=Object(id=bot_globals.SERVERID_UNOG))
+
+        print("=== SYNC RESULT ===")
+        for cmd in commands:
+            print(f"Synced: {cmd.name} ({cmd.id})")
+        print(f"Total synced: {len(commands)}")
 
     @bot_globals.UnogBot.event
     async def on_ready():
@@ -20,7 +31,7 @@ def setup_events():
         actives.start()
 
         try:
-            await bot_globals.UnogBot.tree.sync(guild=bot_globals.Server_Unog)
+            await bot_globals.UnogBot.tree.sync(guild=Object(id=bot_globals.SERVERID_UNOG))
             print('command sync success')
         except Exception as e:
             print(f'command sync fail:{e}')
@@ -28,7 +39,7 @@ def setup_events():
     @bot_globals.UnogBot.tree.error
     async def on_app_command_error(interaction : Interaction, error):
         print(f"ErrorType:{type(error)}\n Message:{error}")
-        await interaction.response.send_message(f"**Hata:**\n {error}",ephemeral=True,delete_after=30)
+        await interaction.response.send_message(f"❌ **Hata:**\n {error}",ephemeral=True,delete_after=30)
         
     @bot_globals.UnogBot.event
     async def on_member_join(member : Member):

@@ -156,6 +156,14 @@ class Jam(dict):
     def participantRoleID(self) -> int:
         return self.get('participantRoleID')
 
+    @property
+    def modPanelChannelID(self) -> int:
+        return self.get('modPanelChannelID')
+    
+    @modPanelChannelID.setter
+    def modPanelChannelID(self,value:int):
+        self['modPanelChannelID'] = value
+
     @participantRoleID.setter
     def participantRoleID(self,value : int):
         self['participantRoleID'] = int(value)
@@ -206,40 +214,31 @@ class Jam(dict):
                  categoryID : int | None = None,
                  generalTextChannelID : int | None = None,
                  generalVoiceChannelID : int | None = None,
+                 modPanelChannelID : int | None = None,
                  participantRoleID : int | None  = None,
                  jammerRoleID : int | None = None,
                  startUnix : int | None = None,
                  endUnix : int | None = None,
-                 url : str | None = None,
-                 description : str | None = None,
+                 url : str = "",
+                 description : str | None = "",
                  *,
                  mapping : Mapping | None = None):
-        if mapping is not None:
+        if mapping:
             super().__init__(mapping)
         else:
             super().__init__({})
-            if shortName is not None:
-                self.shortName = shortName
-            if longName is not None:
-                self.longName = longName
-            if categoryID is not None:
-                self.categoryID = categoryID
-            if generalTextChannelID is not None:
-                self.generalTextChannelID = generalTextChannelID
-            if generalVoiceChannelID is not None:
-                self.generalVoiceChannelID = generalVoiceChannelID
-            if participantRoleID is not None:
-                self.participantRoleID = participantRoleID
-            if jammerRoleID is not None:
-                self.jammerRoleID = jammerRoleID
-            if startUnix is not None:
-                self.startUnix = startUnix
-            if endUnix is not None:
-                self.endUnix = endUnix
-            if url is not None:
-                self.url = url
-            if description is not None:
-                self.description = description
+            self.shortName = shortName
+            self.longName = longName
+            self.categoryID = categoryID
+            self.generalTextChannelID = generalTextChannelID
+            self.generalVoiceChannelID = generalVoiceChannelID
+            self.participantRoleID = participantRoleID
+            self.modPanelChannelID = modPanelChannelID
+            self.jammerRoleID = jammerRoleID
+            self.startUnix = startUnix
+            self.endUnix = endUnix
+            self.url = url
+            self.description = description
         self['_type'] = 'meta'
 
 class JamParticipant(dict):
@@ -314,7 +313,10 @@ class JamTeam(dict):
         self['members'] = list(map(int, value))
 
     def add_participant(self,new_participant_id : int):
-
+        if self.leader == new_participant_id or new_participant_id in self.members:
+            return
+        if new_participant_id in self.joinRequests:
+            self.joinRequests.remove(new_participant_id)
         if self.leader == -1:
             self.leader = new_participant_id
         else:

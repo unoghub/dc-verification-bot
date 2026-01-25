@@ -5,7 +5,7 @@ from discord import ButtonStyle, Interaction,TextStyle,Embed,InteractionType,Tex
 import discord
 from bot_models import UnogMember
 import bot_globals
-from bot_exceptions import UserAlreadyVerified
+from bot_exceptions import ThisUserIsAlreadyVerifiedException
 from bot_conditions import is_user_member
 
 
@@ -30,6 +30,14 @@ class ApprovalFormView(View):
         super().__init__(timeout=None)
         self.add_item(Button(style=ButtonStyle.green, label="Onayla", custom_id="onayla", disabled=False))
         self.add_item(Button(style=ButtonStyle.red, label="Reddet", custom_id="reddet", disabled=False))
+
+
+class JamSubmissionPendingView(View):
+
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(Button(style=ButtonStyle.green, label="Geçerli", custom_id="gecerli", disabled=False))
+        self.add_item(Button(style=ButtonStyle.red, label="Geçersiz", custom_id="gecersiz", disabled=False))
 
 
 #endregion

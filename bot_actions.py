@@ -1,15 +1,16 @@
 import discord
-from discord import Interaction,Guild,Member,InteractionType,ButtonStyle,Embed, Message, PermissionOverwrite, Role, TextChannel, VoiceChannel
+import time
+from discord import CategoryChannel, Colour,Interaction,Guild,Member,InteractionType,ButtonStyle,Embed, Message, PermissionOverwrite, Role, TextChannel, VoiceChannel
 from discord.ui import Modal, TextInput, View, Button, ChannelSelect, RoleSelect
 from discord.ext import tasks
 from tinydb import Query
 from random import choice
 from tinydb.table import Document
 import bot_globals
-from bot_conditions import check_is_approver, is_jam_present,is_user_member
-from bot_exceptions import JamCategoryNotPresent, JamNotPresent, JamTeamAlreadyPresent, JamTeamNotPresent, UserNotApprover, UserAlreadyVerified, UserNotInJam, JamSubmissionAlreadyPresent
+from bot_conditions import *
+from bot_exceptions import *
 from bot_models import Jam, JamParticipant, JamTeam, UnogMember,ApproveRecord
-from bot_views import ApprovalApplyButtonView, ApprovalFormView,ApprovalModal,DenyVerificationModal
+from bot_views import ApprovalApplyButtonView, ApprovalFormView,ApprovalModal,DenyVerificationModal, JamSubmissionPendingView
 
 async def welcome_member_message(member : Member):
     welcome_channel = await bot_globals.Server_Unog.fetch_channel(bot_globals.TEXTCHANNELID_WELCOME)
@@ -94,7 +95,7 @@ async def approvalForm_approveButton_interaction(interaction : Interaction):
                            info2=interaction.message.embeds[0].fields[4].value)
         await add_approvalForm_end_status(interaction.message,interaction.user,True)
     else:
-        raise UserNotApprover()
+        raise YouMustBeApproverException()
 
 async def denyForm_on_submit(interaction : Interaction, deniedMember : Member, reason : str):
 
@@ -214,152 +215,209 @@ async def actives():
 
 #region jam
 
-def submit_jam_project(team_doc_id : int, submissionURL : str):
-    team_doc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(doc_id=team_doc_id)
+async def submit_jam_project(team_doc : Document, submissionURL : str):
+
     duplicate_checker = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(Query().gameURL == submissionURL)
-    if not team_doc:
-        raise JamTeamNotPresent()
-    if duplicate_checker and duplicate_checker.doc_id != team_doc:
-        raise JamSubmissionAlreadyPresent()
+    if duplicate_checker and duplicate_checker.doc_id != team_doc.doc_id:
+        raise YourJamTeamSubmissionIsNotUniqueException()
+    
+    
     team : JamTeam = JamTeam(mapping=team_doc)
-    team.submitted = True
-    team.gameURL = submissionURL
-    bot_globals.TABLE_JAM_CURRENT_TEAMS.update(team,doc_ids=[team_doc.doc_id])
+    if team.gameURL != "":
+        raise YourJamTeamAlreadySubmittedException()
     
 
+    team.gameURL = submissionURL.strip()
+    jam = Jam(mapping=is_jam_present())
+    bot_globals.TABLE_JAM_CURRENT_TEAMS.update(team,doc_ids=[team_doc.doc_id])
+    panelChannel = bot_globals.Server_Unog.get_channel(jam.modPanelChannelID)
+    embed = Embed(title=f"'{team.teamName}' takımı oyununu gönderdi!",description=f"🕒 Gönderim vakti: <t:{int(time.time())}:F>\n🌐 URL: {team.gameURL}\nBu oyunun geçerli/geçersiz olarak onaylanmasını yapın.")
+    view = JamSubmissionPendingView()
+    view.children[0].callback = approve_jam_submit
+    view.children[1].callback = deny_jam_submit
+    await panelChannel.send("",embed=embed,view=view)
 
-async def create_jam_participant(discordID: int):
+async def approve_jam_submit(interaction : Interaction):
+    approver = is_user_approver(interaction.user)
+    if not approver:
+        raise YouMustBeApproverException()
+    #BURADA KALDIN
+
+async def create_jam(shortName :str,fullName:str,unix_start:int,unix_end:int,url:str,description:str =""):
+
+    guild: Guild = bot_globals.Server_Unog
+    shortName = shortName.strip().upper().replace(" ","")
+    fullName = fullName.strip().title()
+    url = url.strip().replace(" ","")
+
+    jamModRole = guild.get_role(bot_globals.ROLEID_JAM_MOD)
+    verifiedRole = guild.get_role(bot_globals.ROLEID_MEMBER)
+    directorRole = guild.get_role(bot_globals.ROLEID_DIRECTOR)
+    botDevRole = guild.get_role(bot_globals.ROLEID_BOTDEV)
+
+    visibilityOverrideForChannels = {
+        guild.default_role:bot_globals.PERMISSION_OVERWRITE_DEFAULT_ROLE,
+        verifiedRole:PermissionOverwrite(view_channel=True),
+        directorRole:PermissionOverwrite(view_channel=True),
+        botDevRole:PermissionOverwrite(view_channel=True)
+    }
+    #visibility overrideları yapıyordun!
+    category: CategoryChannel = await guild.create_category(fullName,overwrites=visibilityOverrideForChannels)
+    voiceChannel = await guild.create_voice_channel(name=f"{shortName} Sohbet", category=category)
+    textChannel = await guild.create_text_channel(str.lower(f"{shortName}-genel"), category=category)
+    panelChannel = await guild.create_text_channel(f"{shortName}-moderatör-paneli",category=category,overwrites={
+        guild.default_role:bot_globals.PERMISSION_OVERWRITE_DEFAULT_ROLE,
+        jamModRole:PermissionOverwrite(view_channel=True),
+        directorRole:PermissionOverwrite(view_channel=True),
+        botDevRole:PermissionOverwrite(view_channel=True)
+    })
+
+    participantRole : Role = await guild.create_role(name=shortName + " Katılımcısı",colour=Colour.random())
+    jammerRole : Role = await guild.create_role(name=shortName + " Jammer",colour= Colour.random())
+
+    jam : Jam = Jam(shortName,
+                    fullName,
+                    startUnix=unix_start,
+                    endUnix=unix_end,
+                    categoryID=category.id,
+                    generalVoiceChannelID=voiceChannel.id,
+                    generalTextChannelID=textChannel.id,
+                    participantRoleID=participantRole.id,
+                    modPanelChannelID=panelChannel.id,
+                    jammerRoleID=jammerRole.id,
+                    description=description,
+                    url=url)
+
+    bot_globals.TABLE_JAM_CURRENT.insert(jam)
+
+async def delete_jam():
+    jam_doc : Document = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
+    jam : Jam = Jam(mapping=jam_doc)
+    categoryID : int = jam_doc.get('categoryID')
+    for i in bot_globals.Server_Unog.categories:
+        if i.id == categoryID:
+            for j in i.channels:
+                await j.delete()
+            await i.delete()
+            break
+    
+    bot_globals.TABLE_JAM_CURRENT.truncate()
+    bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.truncate()
+    bot_globals.TABLE_JAM_CURRENT_TEAMS.truncate()
+    bot_globals.TABLE_JAM_FORMS.truncate()
+    role_participant : Role = bot_globals.Server_Unog.get_role(jam.participantRoleID)
+    await role_participant.delete(reason="Jam bitti.")
+
+async def create_jam_participant(user : Member):#WIP
     jamRaw = bot_globals.TABLE_JAM_CURRENT.get(Query()._type=="meta")
     if jamRaw is None:
         return
     jam : Jam = Jam(mapping=jamRaw)
-    bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.upsert(JamParticipant(discordID=discordID,teamID=-1),Query().discordID == discordID)
-    participantMember : Member = bot_globals.Server_Unog.get_member(discordID)
+    bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.upsert(JamParticipant(discordID=user.id,teamID=-1),Query().discordID == user.id)
+    participantMember : Member = bot_globals.Server_Unog.get_member(user.id)
     participantRole : Role = bot_globals.Server_Unog.get_role(jam.participantRoleID)
     await participantMember.add_roles(participantRole)
 
-async def delete_jam_participant(discordID: int):
-    
-    jamRaw = bot_globals.TABLE_JAM_CURRENT.get(Query()._type=="meta")
-    participantRaw = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == discordID)
-
-    if jamRaw is None:
+async def delete_jam_participant(participant_doc_id: int):#WIP
+    jam_doc = bot_globals.TABLE_JAM_CURRENT.get(Query()._type=="meta")
+    if not jam_doc:
         return
-
-    if not participantRaw:
+    participant_doc = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == participant_doc_id)
+    if not participant_doc:
         return
-    
-    jam : Jam = Jam(mapping=jamRaw)
-    participant : JamParticipant = JamParticipant(mapping=participantRaw)
-    
+    jam : Jam = Jam(mapping=jam_doc)
+    participant : JamParticipant = JamParticipant(mapping=participant_doc)
     if participant.teamID != -1:
         teamDoc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(doc_id=participant.teamID)
         if teamDoc:
             jamTeam = JamTeam(mapping=teamDoc)
 
-            jamTeam.remove_participant(discordID)
+            jamTeam.remove_participant(participant_doc_id)
             if jamTeam.isEmpty:
                 delete_jam_team(teamDoc.doc_id)
 
-    bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.remove(Query().discordID == discordID)
-    participantMember : Member = bot_globals.Server_Unog.get_member(discordID)
+    bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.remove(Query().discordID == participant_doc_id)
+    participantMember : Member = bot_globals.Server_Unog.get_member(participant_doc_id)
     participantRole : Role = bot_globals.Server_Unog.get_role(jam.participantRoleID)
     await participantMember.remove_roles(participantRole)
 
-async def create_jam_team(teamName : str) -> int:
+async def create_jam_team(teamName : str,categoryChannel : CategoryChannel) -> int: #DONE 
     teamName = teamName.strip().lower().replace(" ","-")
-    dupe = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(Query().teamName == teamName)
-    if not dupe:
-        jam_doc = is_jam_present()
-        if jam_doc:
-            jamData = Jam(mapping=jam_doc)
-            jamCategory = bot_globals.Server_Unog.get_channel(jamData.categoryID)
-            if jamCategory:
-                memberRole = bot_globals.Server_Unog.get_role(bot_globals.ROLEID_MEMBER)
-                everyoneRole = bot_globals.Server_Unog.default_role
-                voiceChannel : VoiceChannel = await jamCategory.create_voice_channel(
-                    teamName,overwrites={everyoneRole:bot_globals.PERMISSION_OVERWRITE_DEFAULT_ROLE,
-                                         memberRole:bot_globals.PERMISSION_OVERWRITE_JAM_VERIFIEDMEMBER_VC})
-                # textChannel : TextChannel = await jamCategory.create_text_channel(
-                #     teamName,overwrites={everyoneRole:bot_globals.PERMISSION_OVERWRITE_DEFAULT_ROLE})
-                # await textChannel.set_permissions(memberRole,overwrite=bot_globals.PERMISSION_OVERWRITE_JAM_VERIFIEDMEMBER_VC)
-                return bot_globals.TABLE_JAM_CURRENT_TEAMS.insert(JamTeam(teamName=teamName,
-                                                                    submitted=False,
-                                                                    gameURL="",
-                                                                    leader=-1,
-                                                                    members=[],
-                                                                    textChannelID=-1,
-                                                                    voiceChannelID=voiceChannel.id,
-                                                                    joinRequests=[]))
-            raise JamCategoryNotPresent()
-        raise JamNotPresent()
-    else:
-        raise JamTeamAlreadyPresent()
+    memberRole = bot_globals.Server_Unog.get_role(bot_globals.ROLEID_MEMBER)
+    everyoneRole = bot_globals.Server_Unog.default_role
+    voiceChannel : VoiceChannel = await categoryChannel.create_voice_channel(
+        teamName,overwrites={everyoneRole:bot_globals.PERMISSION_OVERWRITE_DEFAULT_ROLE,
+                                memberRole:bot_globals.PERMISSION_OVERWRITE_JAM_VERIFIEDMEMBER_VC})
+    return bot_globals.TABLE_JAM_CURRENT_TEAMS.insert(JamTeam(teamName=teamName,
+                                                                submitted=False,
+                                                                gameURL="",
+                                                                leader=-1,
+                                                                members=[],
+                                                                textChannelID=-1,
+                                                                voiceChannelID=voiceChannel.id,
+                                                                joinRequests=[]))
 
-async def delete_jam_team(team_id : int):
-    team_doc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(doc_id=team_id)
-    if team_doc:
-        team = JamTeam(mapping=team_doc)
-        voiceChannel : VoiceChannel = bot_globals.Server_Unog.get_channel(team.voiceChannelID)
+async def delete_jam_team(team_doc : Document): #DONE
+    team = JamTeam(mapping=team_doc)
+    voiceChannel : VoiceChannel = bot_globals.Server_Unog.get_channel(team.voiceChannelID)
+    if voiceChannel:
         await voiceChannel.delete()
-        if team.leader != -1:
-            bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.update({"teamID":-1},doc_ids=[team.leader])
-        bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.update({"teamID":-1},doc_ids=team.members)
-        
-        bot_globals.TABLE_JAM_CURRENT_TEAMS.remove(doc_ids=[team_id])
-    pass
+    if team.leader != -1:
+        bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.update({"teamID":-1},doc_ids=[team.leader])
+    bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.update({"teamID":-1},doc_ids=team.members)
+    bot_globals.TABLE_JAM_CURRENT_TEAMS.remove(doc_ids=[team_doc.doc_id])
 
-async def add_participant_to_jam_team(participant_id: int,team_id: int,send_message : bool = False):
+async def add_jam_join_request_to_jam_team(participant_doc : Document,team_doc: Document):#DONE
+    team : JamTeam = JamTeam(mapping=team_doc)
+    voiceChannel = bot_globals.Server_Unog.get_channel(team.voiceChannelID)
 
-    team_raw = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(doc_id=team_id)
-    participant_raw = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(doc_id=participant_id)
+    if participant_doc.doc_id in team.joinRequests:
+        raise JamTeamJoinRequestAlreadySentException()
+    elif participant_doc.doc_id in team.members or participant_doc.doc_id == team.leader:
+        raise YouAlreadyInRequestedJamTeamException()
+    team.joinRequests.append(participant_doc.doc_id)
+    bot_globals.TABLE_JAM_CURRENT_TEAMS.update({'joinRequests':team.joinRequests},doc_ids=[team_doc.doc_id])
+    await voiceChannel.send(f"Hey! <@{participant_doc.get('discordID')}> isimli kullanıcı ekibinize katılmak istiyor.\n\n Kabul etmek için:\n `/jam ekip-isteğini-kabul-et <discord_username>`\n komutunu kullanabilirsiniz.")
 
-    if participant_raw and team_raw:
-        team = JamTeam(mapping=team_raw)
-        participant_discordID = participant_raw.get('discordID')
-        team.add_participant(participant_id)
-        participant_member : Member = bot_globals.Server_Unog.get_member(participant_discordID)
+async def add_participant_to_jam_team(participant_doc: Document,team_doc: Document,send_message_to_team : bool = False): #DONE
+    team = JamTeam(mapping=team_doc)
+    participant_member : Member = bot_globals.Server_Unog.get_member(participant_doc.get('discordID'))
+    team.add_participant(participant_doc.doc_id)
+    teamvc = bot_globals.Server_Unog.get_channel(team.voiceChannelID)
+    new_overwrites = teamvc.overwrites
+    new_overwrites[participant_member] = bot_globals.PERMISSION_OVERWRITE_JAM_TEAM_MEMBER_VC
+    await teamvc.edit(overwrites=new_overwrites)
 
-        teamvc = bot_globals.Server_Unog.get_channel(team.voiceChannelID)
-            
-        new_overwrites = teamvc.overwrites
-        new_overwrites[participant_member] = bot_globals.PERMISSION_OVERWRITE_JAM_TEAM_MEMBER_VC
-        await teamvc.edit(overwrites=new_overwrites)
+    bot_globals.TABLE_JAM_CURRENT_TEAMS.update(team,doc_ids=[team_doc.doc_id])
+    bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.update({'teamID':team_doc.doc_id},doc_ids=[participant_doc.doc_id])
+    if send_message_to_team:
+        await teamvc.send(f"**Yeni ekip üyesi**: {participant_member.mention}")
 
-        bot_globals.TABLE_JAM_CURRENT_TEAMS.update(team,doc_ids=[team_id])
-        participant_raw['teamID'] = team_id
-        bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.update(participant_raw,doc_ids=[participant_id])
-        if send_message:
-            await teamvc.send(f"**Yeni ekip üyesi eklendi**: {participant_member.mention}")
+async def remove_participant_from_jam_team(participant_doc: Document, send_message_to_team : bool = False):#DONE
+    team_id = participant_doc.get('teamID')
 
-async def remove_participant_from_jam_team(participant_id: int, send_message : bool = False, interaction : Interaction | None = None):
-    participant_doc = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(doc_id=participant_id)
-    if participant_doc:
-        team_id = participant_doc.get('teamID')
+    team_doc : Document = None
+    if team_id != -1:
         team_doc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(doc_id=team_id)
-        if team_doc:
-            team = JamTeam(mapping=team_doc)
-            participant_discordID = participant_doc.get('discordID')
-            participant_member : Member = bot_globals.Server_Unog.get_member(participant_discordID)
-            participant_doc['teamID'] = -1
-            team.remove_participant(participant_id)
-
-            teamvc : VoiceChannel = bot_globals.Server_Unog.get_channel(team.voiceChannelID)
-            
-            new_overwrites = teamvc.overwrites
-            new_overwrites.pop(participant_member,None)
-            await teamvc.edit(overwrites=new_overwrites)
-            if team.isEmpty:
-                await delete_jam_team(team_doc.doc_id)
-            else:
-                bot_globals.TABLE_JAM_CURRENT_TEAMS.update(team,doc_ids=[team_doc.doc_id])
-                bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.update(participant_doc,doc_ids=[participant_doc.doc_id])
-                if send_message:
-                    await teamvc.send(f"{participant_member.mention} ekibinizden ayrıldı.")
-            if interaction:
-                await interaction.response.send_message("Ekipten çıktınız.",ephemeral=True,delete_after=15)
-        else:
-            raise JamTeamNotPresent()
     else:
-        raise UserNotInJam()
+        Deneme = Query()
+        team_doc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get((Deneme.members.any(Query().value == participant_doc.doc_id)) |
+        (Deneme.leader == participant_doc.doc_id))
+
+    team = JamTeam(mapping=team_doc)
+    participant_member : Member = bot_globals.Server_Unog.get_member(participant_doc.get("discordID"))
+    bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.update({'teamID':-1},doc_ids=[participant_doc.doc_id])
+    team.remove_participant(participant_doc.doc_id)
+    teamvc : VoiceChannel = bot_globals.Server_Unog.get_channel(team.voiceChannelID)
+    new_overwrites = teamvc.overwrites
+    new_overwrites.pop(participant_member,None)
+    await teamvc.edit(overwrites=new_overwrites)
+    if team.isEmpty:
+        await delete_jam_team(team_doc)
+    else:
+        bot_globals.TABLE_JAM_CURRENT_TEAMS.update(team,doc_ids=[team_doc.doc_id])
+        if send_message_to_team:
+            await teamvc.send(f"{participant_member.mention} ekibinizden ayrıldı.")
+       
+    
 #endregion
