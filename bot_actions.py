@@ -104,7 +104,7 @@ async def denyForm_on_submit(interaction : Interaction, deniedMember : Member, r
     embed.add_field(name="Reddetme Sebebi 🤨", value=reason, inline=False)
     embed.add_field(name="Reddeden", value=f"<@{interaction.user.id}>", inline=False)
     embed.set_thumbnail(url=deniedMember.avatar)
-
+    await disable_approval_form(interaction)
     await interaction.response.send_message("", embed=embed)
     await deniedMember.send(f"Merhaba, <@{deniedMember.id}>!\nUmarız iyisindir ve her şey yolundadır. Başvurunu inceledik fakat maalesef aşağıdaki nedenden dolayı kabul edemiyoruz.\n```{reason}```\nEğer formu buna dikkat ederek yeniden doldurursan en kısa sürede başvurunu tekrar inceleyip seni onaylayabiliriz.\nAyrıca eğer bir problemle karşılaşırsan direktörler ile iletişime geçebilirsin. 💙")
 
@@ -134,6 +134,14 @@ async def disable_approval_form(interaction : Interaction):
     view.add_item(buton2)
 
     await interaction.message.add_reaction('✅')
+    await interaction.response.edit_message(view=view)
+
+async def disable_submission_form(interaction: Interaction):
+    view = View() 
+    buton1 = Button(style=discord.ButtonStyle.green, label="Geçerli", disabled=True)
+    buton2 = Button(style=discord.ButtonStyle.red, label="Geçersiz", disabled=True)
+    view.add_item(buton1)
+    view.add_item(buton2)
     await interaction.response.edit_message(view=view)
 
 async def approvalModal_on_submit(interaction : Interaction, unogMember : UnogMember):
@@ -209,7 +217,10 @@ async def actives():
     view.children[1].callback = approvalForm_denyButton_interaction
     bot_globals.UnogBot.add_view(view=view)
 
-    
+    view = JamSubmissionPendingView()
+    view.children[0].callback = on_jam_submit_approve
+    view.children[1].callback = on_jam_submit_deny
+    bot_globals.UnogBot.add_view(view=view)
 
     print("Actives refreshed")
 
@@ -233,15 +244,30 @@ async def submit_jam_project(team_doc : Document, submissionURL : str):
     panelChannel = bot_globals.Server_Unog.get_channel(jam.modPanelChannelID)
     embed = Embed(title=f"'{team.teamName}' takımı oyununu gönderdi!",description=f"🕒 Gönderim vakti: <t:{int(time.time())}:F>\n🌐 URL: {team.gameURL}\nBu oyunun geçerli/geçersiz olarak onaylanmasını yapın.")
     view = JamSubmissionPendingView()
-    view.children[0].callback = approve_jam_submit
-    view.children[1].callback = deny_jam_submit
+    view.children[0].callback = on_jam_submit_approve
+    view.children[1].callback = on_jam_submit_deny
     await panelChannel.send("",embed=embed,view=view)
 
-async def approve_jam_submit(interaction : Interaction):
+async def on_jam_submit_approve(interaction : Interaction):
     approver = is_user_approver(interaction.user)
     if not approver:
         raise YouMustBeApproverException()
+    teamName = interaction.message.embeds[0].title.split(" ")[0].removeprefix("'").removesuffix("'")
+    team_doc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(Query().teamName == teamName)
+    bot_globals.TABLE_JAM_CURRENT_TEAMS.update({'passed':True},doc_ids=[team_doc.doc_id])
+    await interaction.message.add_reaction("✅")
+    await disable_submission_form(interaction=interaction)
     #BURADA KALDIN
+
+async def on_jam_submit_deny(interaction: Interaction):
+    approver = is_user_approver(interaction.user)
+    if not approver:
+        raise YouMustBeApproverException()
+    teamName = interaction.message.embeds[0].title.split(" ")[0].removeprefix("'").removesuffix("'")
+    team_doc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(Query().teamName == teamName)
+    bot_globals.TABLE_JAM_CURRENT_TEAMS.update({'passed':False},doc_ids=[team_doc.doc_id])
+    await interaction.message.add_reaction("❌")
+    await disable_submission_form(interaction=interaction)
 
 async def create_jam(shortName :str,fullName:str,unix_start:int,unix_end:int,url:str,description:str =""):
 
@@ -301,6 +327,19 @@ async def delete_jam():
             await i.delete()
             break
     
+    all_participants = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.all()
+    participantRole = bot_globals.Server_Unog.get_role(jam.participantRoleID)
+    jammerRole = bot_globals.Server_Unog.get_role(jam.jammerRoleID)
+    for participant in all_participants:
+        member = bot_globals.Server_Unog.get_member(participant.get('discordID'))
+        await member.remove_roles(participantRole)
+        teamid = participant.get('teamID')
+        if teamid != -1:
+            team = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(doc_id=teamid)
+            if team.get('passed'):
+                await member.add_roles(jammerRole)
+                await member.send(f"Tebrikler! {jam.longName} Sonucunda gönderdiğiniz oyun moderatörlerimizce kabul edildi ve {jammerRole.mention} kalıcı rolünü kazandınız.")
+
     bot_globals.TABLE_JAM_CURRENT.truncate()
     bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.truncate()
     bot_globals.TABLE_JAM_CURRENT_TEAMS.truncate()
@@ -308,7 +347,7 @@ async def delete_jam():
     role_participant : Role = bot_globals.Server_Unog.get_role(jam.participantRoleID)
     await role_participant.delete(reason="Jam bitti.")
 
-async def create_jam_participant(user : Member):#WIP
+async def create_jam_participant(user : Member):
     jamRaw = bot_globals.TABLE_JAM_CURRENT.get(Query()._type=="meta")
     if jamRaw is None:
         return
@@ -318,7 +357,7 @@ async def create_jam_participant(user : Member):#WIP
     participantRole : Role = bot_globals.Server_Unog.get_role(jam.participantRoleID)
     await participantMember.add_roles(participantRole)
 
-async def delete_jam_participant(participant_doc_id: int):#WIP
+async def delete_jam_participant(participant_doc_id: int):
     jam_doc = bot_globals.TABLE_JAM_CURRENT.get(Query()._type=="meta")
     if not jam_doc:
         return
@@ -349,7 +388,7 @@ async def create_jam_team(teamName : str,categoryChannel : CategoryChannel) -> i
         teamName,overwrites={everyoneRole:bot_globals.PERMISSION_OVERWRITE_DEFAULT_ROLE,
                                 memberRole:bot_globals.PERMISSION_OVERWRITE_JAM_VERIFIEDMEMBER_VC})
     return bot_globals.TABLE_JAM_CURRENT_TEAMS.insert(JamTeam(teamName=teamName,
-                                                                submitted=False,
+                                                                passed=False,
                                                                 gameURL="",
                                                                 leader=-1,
                                                                 members=[],

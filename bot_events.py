@@ -38,8 +38,22 @@ def setup_events():
 
     @bot_globals.UnogBot.tree.error
     async def on_app_command_error(interaction : Interaction, error):
-        print(f"ErrorType:{type(error)}\n Message:{error}")
-        await interaction.response.send_message(f"❌ **Hata:**\n {error}",ephemeral=True,delete_after=30)
+        # print(f"ErrorType:{type(error)}\n Message:{error}")
+        # await interaction.response.send_message(f"❌ **Hata:**\n {error}",ephemeral=True,delete_after=30)
+        if interaction.response.is_done():
+            # Already responded or deferred → use followup
+            await interaction.followup.send(
+                f"❌ **Hata:**\n{error}",
+                ephemeral=True,
+                delete_after=30
+            )
+        else:
+            # Not responded yet → normal response
+            await interaction.response.send_message(
+                f"❌ **Hata:**\n{error}",
+                ephemeral=True,
+                delete_after=30
+            )
         
     @bot_globals.UnogBot.event
     async def on_member_join(member : Member):

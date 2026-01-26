@@ -281,8 +281,9 @@ class JamModCog(commands.Cog):
     @app_commands.check(check_is_jam_mod)
     @app_commands.check(check_is_jam_present)
     async def jam_end(self,interaction : Interaction):
+        await interaction.response.defer()
         await delete_jam()
-        await interaction.response.send_message("Jam başarıyla bitirildi.",ephemeral=True,delete_after=10)
+        await interaction.followup.send("Jam başarıyla bitirildi.",ephemeral=True)
 
 
 
@@ -432,7 +433,7 @@ class JamCog(commands.Cog):
     async def jam_leave_team(self,interaction : Interaction): #DONE 
 
         participant_doc = is_user_in_jam(interaction.user)
-        await remove_participant_from_jam_team(participant_doc,True,interaction=interaction)
+        await remove_participant_from_jam_team(participant_doc,True)
         await interaction.response.send_message("🔙 Jam ekibinizden başarıyla çıktınız.",ephemeral=True,delete_after=20)
 
 

@@ -336,12 +336,12 @@ class JamTeam(dict):
         raise NotImplementedError()
 
     @property
-    def submitted(self) -> bool:
-        return self.get('submitted')
+    def passed(self) -> bool:
+        return self.get('passed')
 
-    @submitted.setter
-    def submitted(self,value : bool):
-        self['submitted'] = bool(value)
+    @passed.setter
+    def passed(self,value : bool):
+        self['passed'] = bool(value)
 
     @property
     def teamName(self) -> str:
@@ -379,7 +379,7 @@ class JamTeam(dict):
 
     def __init__(self,
                  teamName : str = "",
-                 submitted : bool = False,
+                 passed : bool = False,
                  gameURL : str = "",
                  leader : int = -1,
                  members : list[int] = [],
@@ -394,7 +394,7 @@ class JamTeam(dict):
             super().__init__({})
             self.joinRequests = joinRequests
             self.teamName = teamName
-            self.submitted = submitted
+            self.passed = passed
             self.gameURL = gameURL
             self.leader = leader
             self.members = members
