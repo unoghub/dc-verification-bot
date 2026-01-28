@@ -278,7 +278,7 @@ class JamModCog(commands.Cog):
 
 
 
-    @jam_mod.command(name="jami-bitir", description="Mevcut jam'i bitirir, kabul edilen gruplar jammer olarak terfi edilir. Dikkat: bütün jam verisi silinir.")
+    @jam_mod.command(name="jami-bitir", description="Mevcut jam'i bitirir, kabul edilen gruplar jammer olarak terfi edilir.Bütün jam verisi silinir.")
     @app_commands.check(check_is_jam_mod)
     async def jam_end(self,interaction : Interaction):
         
