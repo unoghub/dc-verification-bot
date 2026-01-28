@@ -75,7 +75,7 @@ async def approvalForm_applyButton_interaction(interaction : Interaction):
 
 async def approvalForm_denyButton_interaction(interaction : Interaction):
     if check_is_approver(interaction):
-        await interaction.response.send_modal(DenyVerificationModal(interaction,denyForm_on_submit))
+        await interaction.response.send_modal(DenyVerificationModal(interaction,approvalDenyModal_on_submit))
 
 async def approvalForm_approveButton_interaction(interaction : Interaction):
     if check_is_approver(interaction):
@@ -97,15 +97,17 @@ async def approvalForm_approveButton_interaction(interaction : Interaction):
     else:
         raise YouMustBeApproverException()
 
-async def denyForm_on_submit(interaction : Interaction, deniedMember : Member, reason : str):
+async def approvalDenyModal_on_submit(interaction : Interaction, deniedMember : Member, reason : str):
 
+    await interaction.message.add_reaction('❌')
     embed = Embed(title="Reddedildi ❌", description="Kullanıcıya mesaj gönderildi!", color=choice(bot_globals.COLORS_UNOG))
     embed.add_field(name="\u200b", value=f"<@{deniedMember.id}>", inline=False)
     embed.add_field(name="Reddetme Sebebi 🤨", value=reason, inline=False)
     embed.add_field(name="Reddeden", value=f"<@{interaction.user.id}>", inline=False)
     embed.set_thumbnail(url=deniedMember.avatar)
     await disable_approval_form(interaction)
-    await interaction.response.send_message("", embed=embed)
+    panelChannel = bot_globals.Server_Unog.get_channel(bot_globals.TEXTCHANNELID_VERIFICATION_PANEL)
+    await panelChannel.send("", embed=embed)
     await deniedMember.send(f"Merhaba, <@{deniedMember.id}>!\nUmarız iyisindir ve her şey yolundadır. Başvurunu inceledik fakat maalesef aşağıdaki nedenden dolayı kabul edemiyoruz.\n```{reason}```\nEğer formu buna dikkat ederek yeniden doldurursan en kısa sürede başvurunu tekrar inceleyip seni onaylayabiliriz.\nAyrıca eğer bir problemle karşılaşırsan direktörler ile iletişime geçebilirsin. 💙")
 
 async def create_approval_form(unogMember : UnogMember):
@@ -133,7 +135,6 @@ async def disable_approval_form(interaction : Interaction):
     view.add_item(buton1)
     view.add_item(buton2)
 
-    await interaction.message.add_reaction('✅')
     await interaction.response.edit_message(view=view)
 
 async def disable_submission_form(interaction: Interaction):
@@ -164,26 +165,29 @@ async def approve_user(approver : Member,target_user: Member, newName : str = ""
      
     memberRole = bot_globals.Server_Unog.get_role(bot_globals.ROLEID_MEMBER)
 
-    unogMember = UnogMember(id=target_user.id,
-                            name=newName,
-                            email=eMail,
-                            birthday=birthday,
-                            info1=info1,
-                            info2=info2)
-    approveRecord = None
+    if len(newName) < 1:
+        raise UserNewNameCouldNotBeEmpty()
+    elif str.isalnum(newName):
+        raise UserNewNameMustBeAlphanumeric()
+
+    update = UnogMember(id=target_user.id,
+                        name=newName,
+                        email=eMail,
+                        birthday=birthday,
+                        info1=info1,
+                        info2=info2)
+    approveRecord = ApproveRecord(approvedID=target_user.id,
+                                approverID=approver.id)
     
-    if approver:
-        approveRecord = ApproveRecord(approvedID=target_user.id,
-                                  approverID=approver.id)
-        bot_globals.TABLE_APPROVES.insert(approveRecord)
-        if bot_globals.LOG_APPROVES:
-            await msg_approvalForm_decision(target_user,approver)
+    bot_globals.TABLE_MEMBERS.upsert(update,Query().id == target_user.id)
+    bot_globals.TABLE_APPROVES.upsert(approveRecord,Query().approvedID == target_user.id)
 
     await target_user.add_roles(memberRole)
     await target_user.edit(nick=newName)
     
-    bot_globals.TABLE_MEMBERS.upsert(unogMember,Query().id == target_user.id)
 
+    if bot_globals.LOG_APPROVES:
+        await msg_approvalForm_decision(target_user,approver)
     if bot_globals.WELCOME_NEWCOMERS:
          await welcome_member_message(target_user)
 
@@ -257,7 +261,6 @@ async def on_jam_submit_approve(interaction : Interaction):
     bot_globals.TABLE_JAM_CURRENT_TEAMS.update({'passed':True},doc_ids=[team_doc.doc_id])
     await interaction.message.add_reaction("✅")
     await disable_submission_form(interaction=interaction)
-    #BURADA KALDIN
 
 async def on_jam_submit_deny(interaction: Interaction):
     approver = is_user_approver(interaction.user)

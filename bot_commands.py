@@ -102,10 +102,10 @@ class ApproverCog(commands.Cog):
         else:
             embed.add_field(name="Alım Sorumlusu Rolü", value="<@&" + str(approverRole.id) + ">")
         
-        if not memberRole:
-            embed.add_field(name="Onaylı Üye Rolü", value="Ayarlanmamış")
-        else:
-            embed.add_field(name="Onaylı Üye Rolü", value="<@&" + str(memberRole.id) + ">")
+        # if not memberRole:
+        #     embed.add_field(name="Onaylı Üye Rolü", value="Ayarlanmamış")
+        # else:
+        #     embed.add_field(name="Onaylı Üye Rolü", value="<@&" + str(memberRole.id) + ">")
         
         async def set_verification_panel_channel(interaction : Interaction):
             await interaction.response.send_message("Onay Paneli kanalını seçin:", ephemeral=True, delete_after=180,view=View().add_item(VerificationPanelChannelSelect()))
@@ -158,8 +158,8 @@ class ApproverCog(commands.Cog):
         button7 = Button(style=ButtonStyle.green, label="Alım Sorumlusu Rolünü Seç", custom_id="setApproverRole",row=3)
         button8 = Button(style=ButtonStyle.gray,label="Alım Sorumlusu Rolünü Sıfırla", custom_id="resetApproverRole",row=3)
 
-        button9 = Button(style=ButtonStyle.green, label="Onaylı Rolünü Seç", custom_id="give",row=4)
-        button10 = Button(style=ButtonStyle.gray, label="Onaylı Rolünü Sıfırla", custom_id="givedel", row=4)
+        # button9 = Button(style=ButtonStyle.green, label="Onaylı Rolünü Seç", custom_id="give",row=4)
+        # button10 = Button(style=ButtonStyle.gray, label="Onaylı Rolünü Sıfırla", custom_id="givedel", row=4)
 
         button1.callback = set_verification_panel_channel
         button2.callback = reset_verification_panel_channel
@@ -173,8 +173,8 @@ class ApproverCog(commands.Cog):
         button7.callback = set_approver_role
         button8.callback = reset_approver_role
 
-        button9.callback = set_member_role
-        button10.callback = reset_member_role
+        # button9.callback = set_member_role
+        # button10.callback = reset_member_role
 
         view.add_item(button1)
         view.add_item(button2)
@@ -184,8 +184,8 @@ class ApproverCog(commands.Cog):
         view.add_item(button6)
         view.add_item(button7)
         view.add_item(button8)
-        view.add_item(button9)
-        view.add_item(button10)
+        # view.add_item(button9)
+        # view.add_item(button10)
         
         await interaction.response.send_message("", view=view, embed=embed, ephemeral=True, delete_after=30)
 
@@ -195,10 +195,10 @@ class ApproverCog(commands.Cog):
     async def approve_manually(self,interaction: Interaction, target_user: Member,usernick : str):
         if target_user is None:
             raise TargetUserIsNullException()
-        if not is_user_member(target_user):
-            await approve_user(interaction.user,target_user,usernick)
-        else:
-            raise ThisUserIsAlreadyVerifiedException()
+        if is_user_member(target_user):
+            raise TargetUserIsAlreadyVerified()
+        await approve_user(interaction.user,target_user,usernick)
+        await interaction.response.send_message("İşlem başarılı!",ephemeral=True,delete_after=10)
 
     @approver.command(name="onay_kayıt_butonu_yarat",description="Kayıt kanalında onay kayıt butonu oluşturur.")
     @app_commands.check(check_is_approver)
@@ -214,6 +214,7 @@ class ApproverCog(commands.Cog):
         view.children[0].callback = approvalForm_applyButton_interaction
 
         await verificationChannel.send("", view=view)
+        await interaction.response.send_message("İşlem başarılı!",ephemeral=True,delete_after=10)
 
 class BotdevCog(commands.Cog):
 
@@ -227,7 +228,7 @@ class BotdevCog(commands.Cog):
 
     @botdev.command(name="veritabanı-migrate", description="ÜNOG veritabanında gerekli olan migration'ları çağırır, veritabanını düzeltir.")
     @app_commands.check(check_is_botdev)
-    async def migrate_database(self,interaction: Interaction):
+    async def migrate_database(self,interaction: Interaction): #DONE 
 
         await interaction.response.defer(ephemeral=True)
 
@@ -264,9 +265,9 @@ class JamModCog(commands.Cog):
     @jam_mod.command(name="jam-yarat", description="Yeni bir jam oluştur.")
     @discord.app_commands.describe(jam_kısa_adı="Jam'in kısa adı (örn: GGJ26)",jam_tam_adı="Jam'in uzun yazımı (örn: Global Game Jam 2026)",baslangic_timestamp="Başlangıç tarihinin Unix kodu",bitis_timestamp="Bitiş tarihinin Unix kodu",jam_url="Jam sayfasının url adresi",aciklama="Jam'in kısa açıklaması.")
     @app_commands.check(check_is_jam_mod)
-    @app_commands.check(check_is_no_jam_present)
     async def jam_create(self,interaction: Interaction, jam_kısa_adı: str,jam_tam_adı : str,baslangic_timestamp : int,bitis_timestamp: int,jam_url : str,aciklama : str = None):
         
+        check_is_no_jam_present(interaction)
         if not aciklama:
             aciklama = ""
         await create_jam(jam_kısa_adı,jam_tam_adı,baslangic_timestamp,bitis_timestamp,jam_url,aciklama)
@@ -277,47 +278,69 @@ class JamModCog(commands.Cog):
 
 
 
-    @jam_mod.command(name="jami-bitir", description="Mevcut jam'i bitirir, Dikkat: bütün jam verisi silinir.")
+    @jam_mod.command(name="jami-bitir", description="Mevcut jam'i bitirir, kabul edilen gruplar jammer olarak terfi edilir. Dikkat: bütün jam verisi silinir.")
     @app_commands.check(check_is_jam_mod)
-    @app_commands.check(check_is_jam_present)
     async def jam_end(self,interaction : Interaction):
+        
+        check_is_jam_present(interaction)
         await interaction.response.defer()
         await delete_jam()
         await interaction.followup.send("Jam başarıyla bitirildi.",ephemeral=True)
 
 
 
-    @jam_mod.command(name="ekipleri-içe-aktar", description="Jam takımlarını içe aktarır.")
+    @jam_mod.command(name="ekipleri-içe-aktar", description="Jam katılımcılarını içe aktarır ve hepsini onaylı üye yapar.")
     @discord.app_commands.describe(teams=".csv formatında takımların dosyası")
     @app_commands.check(check_is_jam_mod)
-    @app_commands.check(check_is_jam_present)
     async def jam_import_teams(self,interaction: Interaction, teams: Attachment):
+        check_is_jam_present(interaction=interaction)
+        if not teams.filename.lower().endswith(".csv") or (teams.content_type.split(";")[0] not in ("text/csv", "application/vnd.ms-excel")):
+            print(teams.content_type)
+            raise AttachedFileIsNotCsvException()
+        
+        await interaction.response.defer()
+        bot_globals.TABLE_JAM_FORMS.truncate()
         await ImporterGGJ26.run(interaction,teams)
-        await interaction.response.send_message("✅ İşlem başarılı.",ephemeral=True,delete_after=10)
+        all_forms = bot_globals.TABLE_JAM_FORMS.all()
+        for item in all_forms:
+            member = bot_globals.Server_Unog.get_member_named(item.get('username'))
+            if not member:
+                continue
+            await approve_user(interaction.guild.me,
+                               member,
+                               newName=item.get('name'),
+                               eMail=item.get('email'),
+                               birthday=item.get('birthday'),
+                               info2="Jam formuyla eklendim.")
+
+        await interaction.followup.send(
+            "İçe aktarım başarılı ✅ Formda ismi sunucuda bulunabilen herkes onaylı üye yapıldı.",
+            ephemeral=True
+        )
 
 
 
-
-    @jam_mod.command(name="terfi", description="Oyun sayfası eklenmiş olan ekipleri terfi eder ve Jammer rolünü ekler.")
-    @app_commands.check(check_is_jam_mod)
-    @app_commands.check(check_is_jam_present)
-    async def jam_rank_teams(self,interaction: Interaction): #buraya manuel approvement ekleyeceğiz.
-        pass
-
+    # @jam_mod.command(name="terfi", description="Oyun sayfası eklenmiş olan ekipleri terfi eder ve Jammer rolünü ekler.")
+    # @app_commands.check(check_is_jam_mod)
+    # async def jam_rank_teams(self,interaction: Interaction): #buraya manuel approvement ekleyeceğiz.
+    #     check_is_jam_present(interaction)
+    #     pass
 
 
 
     @jam_mod.command(name="üyeyi-ekibinden-çıkar", description="Yazılan ekipten üyeyi çıkartırsınız.")
     @app_commands.describe(hedef="Ekibinden çıkartılcak kişi.")
     @app_commands.check(check_is_jam_mod)
-    @app_commands.check(check_is_jam_present)
     async def jam_mod_remove_participant_from_team(self,interaction: Interaction, hedef : Member):
+
+        check_is_jam_present(interaction)
         target_participant_doc = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == hedef.id)
+        if not target_participant_doc:
+            raise TargetUserIsNotInJam()
         team_doc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(doc_id=target_participant_doc.get('teamID'))
-        if team_doc:
-            await remove_participant_from_jam_team(target_participant_doc,send_message_to_team=True,interaction=interaction)
-        else:
-            await interaction.response.send_message("**Hata:** Hedef kullanıcı bir jam takımında değil.")
+        if not team_doc:
+            raise TargetUserIsNotInJamTeam()
+        await remove_participant_from_jam_team(target_participant_doc,send_message_to_team=True,interaction=interaction)
 
 class JamCog(commands.Cog):
 
@@ -366,7 +389,7 @@ class JamCog(commands.Cog):
  
 
 
-    @jammer.command(name="yardım", description="Mevcut jame katılırsınız.")
+    @jammer.command(name="yardım", description="Jam komutlarının açıklamaları.")
     @app_commands.check(check_can_member_get_jam_help)
     async def jam_help(self,interaction : Interaction): #DONE, SADECE DEĞİŞTİRİLMESİ KALDI
         
@@ -484,11 +507,11 @@ class JamCog(commands.Cog):
     @jammer.command(name="oyunu-gönder", description="⚠ Dikkat!: Sadece bir kere kullanılır. Ekibinizle bitmiş jam oyununuzu yollarsınız.")
     @discord.app_commands.describe(oyun_url="Bitmiş oyununuzun URL'si.")
     @app_commands.check(check_can_user_jam_submit)
-    async def jam_team_submit(self,interaction : Interaction,oyun_url : str): #DONEIMSI
+    async def jam_team_submit(self,interaction : Interaction,oyun_url : str): #DONE
 
         team_doc = is_user_jam_team_leader(interaction.user)
         await submit_jam_project(team_doc,oyun_url)
-        await interaction.response.send_message("#✅ Jam Oyununuzun Gönderimi Başarılı!\n Artık bir şey yapmanıza gerek yok, moderatörler tüm oyunları inceleyecektir.",ephemeral=True,delete_after=15)
+        await interaction.response.send_message("✅ Jam Oyununuzun Gönderimi Başarılı!\n Artık bir şey yapmanıza gerek yok, moderatörler tüm oyunları inceleyecektir.",ephemeral=True,delete_after=15)
 
 
 async def setup_commands(bot_instance: Bot):

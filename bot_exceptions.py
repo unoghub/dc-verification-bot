@@ -104,7 +104,7 @@ class YouAreNotJamTeamLeaderException(AppCommandError):
         super().__init__(message)
 
 class TargetUserIsNotInJam(AppCommandError):
-    def __init__(self, message="Hedef kullanıcı bir jam üyesi değildir."):
+    def __init__(self, message="Hedef kullanıcı bir jam katılımcısı değildir."):
         super().__init__(message)
 
 class TargetUserIsNotVerified(AppCommandError):
@@ -115,8 +115,16 @@ class TargetUserIsAlreadyInYourJamTeam(AppCommandError):
     def __init__(self, message="Hedef kullanıcı zaten ekibinizde."):
         super().__init__(message)
 
+class TargetUserIsAlreadyVerified(AppCommandError):
+    def __init__(self, message="Hedef kullanıcı zaten onaylı."):
+        super().__init__(message)
+
 class TargetUserIsNotVerified(AppCommandError):
     def __init__(self, message="Hedef kullanıcı onaylı üye değildir."):
+        super().__init__(message)
+
+class TargetUserIsNotInJamTeam(AppCommandError):
+    def __init__(self, message="Hedef kullanıcı bir jam ekibinde değil."):
         super().__init__(message)
 
 class ThisJamParticipantDataIsCorruptException(AppCommandError):
@@ -137,4 +145,16 @@ class TargetUserIsNotJoinRequestingYourJamTeam(AppCommandError):
 
 class ThisGivenJamTeamNameDoesNotExistException(AppCommandError):
     def __init__(self, message="Girilen isimde bir jam ekibi bulunmamaktadır."):
+        super().__init__(message)
+
+class UserNewNameCouldNotBeEmpty(AppCommandError):
+    def __init__(self, message="Yeni isim boş olmamalı."):
+        super().__init__(message)
+
+class UserNewNameMustBeAlphanumeric(AppCommandError):
+    def __init__(self, message="Yeni isim boş olmamalı."):
+        super().__init__(message)
+
+class AttachedFileIsNotCsvException(AppCommandError):
+    def __init__(self, message="Eklenen dosya .csv formatında olmalıdır."):
         super().__init__(message)

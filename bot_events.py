@@ -2,13 +2,14 @@ from discord import Member,Interaction,Object
 from tinydb import  Query
 from bot_actions import actives,approve_user,create_jam_participant
 import bot_globals
+from bot_commands import setup_commands
 
 def setup_events():
 
     @bot_globals.UnogBot.event
     async def setup_hook():
         # Load cogs here
-        print("Tree commands:", bot_globals.UnogBot.tree.get_commands())
+        await setup_commands(bot_globals.UnogBot)
         commands = await bot_globals.UnogBot.tree.sync(guild=Object(id=bot_globals.SERVERID_UNOG))
 
         print("=== SYNC RESULT ===")

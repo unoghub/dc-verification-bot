@@ -45,6 +45,7 @@ def is_user_approver(user: Member) -> bool:
 
 def is_user_member(user: Member) -> bool:
     member_role = user.get_role(bot_globals.ROLEID_MEMBER)
+    volunteer_role = user.get_role(bot_globals.ROLEID_VOLUNTEER)
     director_role = user.get_role(bot_globals.ROLEID_DIRECTOR)
     approver_role = user.get_role(bot_globals.ROLEID_APPROVER)
     botdev_role = user.get_role(bot_globals.ROLEID_BOTDEV)
@@ -55,6 +56,7 @@ def is_user_member(user: Member) -> bool:
         director_role,
         approver_role,
         botdev_role,
+        volunteer_role,
         jammod_role,
         user.guild_permissions.administrator
     ])
@@ -233,9 +235,12 @@ def check_can_user_create_jam_team(interaction : Interaction) -> bool:
     return True
 
 def check_can_user_leave_jam_team(interaction: Interaction) -> bool:
+    jam = is_jam_present()
     member = is_user_member(interaction.user)
     participant = is_user_in_jam(interaction.user)
     team = is_user_in_jam_team(interaction.user)
+    if not jam:
+        raise JamNotPresentException()
     if not member:
         raise YoureNotVerifiedException()
     elif not participant:
@@ -245,9 +250,12 @@ def check_can_user_leave_jam_team(interaction: Interaction) -> bool:
     return True
 
 def check_can_user_send_jam_team_join_request(interaction : Interaction) -> bool:
+    jam = is_jam_present()
     member = is_user_member(interaction.user)
     participant = is_user_in_jam(interaction.user)
     team = is_user_in_jam_team(interaction.user)
+    if not jam:
+        raise JamNotPresentException()
     if not member:
         raise YoureNotVerifiedException()
     elif not participant:
@@ -258,7 +266,8 @@ def check_can_user_send_jam_team_join_request(interaction : Interaction) -> bool
 
 def check_can_user_jam_submit(interaction: Interaction) -> bool: # DONE
     team = is_user_jam_team_leader(interaction.user)
-
+    if not is_jam_present():
+        raise JamNotPresentException()
     if not is_user_member(interaction.user):
         raise YoureNotVerifiedException()
     elif not is_user_in_jam(interaction.user):

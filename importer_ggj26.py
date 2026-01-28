@@ -32,8 +32,3 @@ class ImporterGGJ26():
             teamname = row["Takımınızın adı var mı?"]
             if preference == "Online (ÜNOG Discord)":
                 TABLE_JAM_FORMS.upsert({"name":name_surname.strip().title(),"email":email.strip(),"birthday":birthday,"username":discord_username.strip().removeprefix("@"),"teamName":teamname.strip().lower().replace(" ","-")},Query().username == discord_username)
-
-        await interaction.response.send_message(
-            "İçe aktarım başarılı ✅",
-            ephemeral=True,delete_after=30
-        )

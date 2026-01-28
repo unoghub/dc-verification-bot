@@ -8,7 +8,7 @@ import asyncio
 
 bot_globals.UnogBot = Bot(command_prefix="!", intents=Intents.all())
 
-asyncio.run(setup_commands(bot_globals.UnogBot))
+#asyncio.run(setup_commands(bot_globals.UnogBot))
 setup_events()
 
 bot_globals.UnogBot.run(bot_globals.BOT_TOKEN)
