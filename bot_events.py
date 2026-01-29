@@ -60,7 +60,7 @@ def setup_events():
     async def on_member_join(member : Member):
         user = bot_globals.TABLE_MEMBERS.get(Query().id == member.id)
         if user: #member is in db
-            memberRole = bot_globals.Server_Unog.get_channel(bot_globals.ROLEID_MEMBER)
+            memberRole = bot_globals.Server_Unog.get_role(bot_globals.ROLEID_MEMBER)
             await member.add_roles(memberRole)
         else:
 
