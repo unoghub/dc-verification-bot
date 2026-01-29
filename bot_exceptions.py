@@ -158,3 +158,7 @@ class UserNewNameMustBeAlphanumeric(AppCommandError):
 class AttachedFileIsNotCsvException(AppCommandError):
     def __init__(self, message="Eklenen dosya .csv formatında olmalıdır."):
         super().__init__(message)
+
+class TargetUserIsAlreadyJamParticipantException(AppCommandError):
+    def __init__(self, message="Hedefteki kişi zaten bir jam katılımcısı."):
+        super().__init__(message)

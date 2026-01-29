@@ -27,8 +27,7 @@ class ImporterGGJ26():
             name_surname = row["Adınız Soyadınız"]
             email = row["E-posta adresiniz"]
             birthday = row["Doğum Tarihi"]
-            preference = row["Katılım tercihiniz nedir?"]
             discord_username = row["Discord kullanıcı adınız"]
-            teamname = row["Takımınızın adı var mı?"]
-            if preference == "Online (ÜNOG Discord)":
-                TABLE_JAM_FORMS.upsert({"name":name_surname.strip().title(),"email":email.strip(),"birthday":birthday,"username":discord_username.strip().removeprefix("@"),"teamName":teamname.strip().lower().replace(" ","-")},Query().username == discord_username)
+            teamname = row["Takımınızın adı ?"]
+            if discord_username and len(discord_username) > 0:
+                TABLE_JAM_FORMS.upsert({"name":name_surname.strip().title(),"email":email.strip(),"birthday":birthday,"username":discord_username.strip().lower().removeprefix("@"),"teamName":teamname.strip().lower().replace(" ","-")},Query().username == discord_username)

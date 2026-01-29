@@ -121,7 +121,8 @@ async def create_approval_form(unogMember : UnogMember):
     embed.add_field(name="Doğum Tarihi", value=unogMember.birthday, inline=False)
     embed.add_field(name="Bulunduğunuz Kurum Veya Ekip", value=unogMember.info1, inline=False)
     embed.add_field(name="ÜNOG'u Nasıl Keşfettiniz?", value=unogMember.info2, inline=False)
-    embed.set_thumbnail(url=member.avatar)
+    if member.avatar:
+        embed.set_thumbnail(url=member.avatar.url)
 
     view = ApprovalFormView()
     view.children[0].callback = approvalForm_approveButton_interaction
@@ -200,14 +201,16 @@ async def msg_approvalForm_decision (approved : Member,decisionMaker : Member ,d
         if decision:
             embed = Embed(title=f"Onaylandı! ✅",description=f"<@{approved.id}>", color=choice(bot_globals.COLORS_UNOG))
             embed.add_field(name="Onaylayan", value=f"<@{decisionMaker.id}>", inline=False)
-            embed.set_thumbnail(url=approved.avatar.url)
+            if approved.avatar:
+                embed.set_thumbnail(url=approved.avatar.url)
             await verificationPanel.send(embed=embed)
         else:
             embed = Embed(title="Reddedildi ❌", description="Kullanıcıya mesaj gönderildi!", color=choice(bot_globals.COLORS_UNOG))
             embed.add_field(name="\u200b", value=f"<@{approved.id}>", inline=False)
             embed.add_field(name="Reddetme Sebebi 🤨", value=additionalInfo, inline=False)
             embed.add_field(name="Reddeden", value=f"<@{decisionMaker.id}>", inline=False)
-            embed.set_thumbnail(url=approved.avatar.url)
+            if approved.avatar:
+                embed.set_thumbnail(url=approved.avatar.url)
 
 @tasks.loop(hours=1)
 async def actives():

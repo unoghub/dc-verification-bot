@@ -45,8 +45,7 @@ def setup_events():
             # Already responded or deferred → use followup
             await interaction.followup.send(
                 f"❌ **Hata:**\n{error}",
-                ephemeral=True,
-                delete_after=30
+                ephemeral=True
             )
         else:
             # Not responded yet → normal response

@@ -306,19 +306,29 @@ class JamModCog(commands.Cog):
             member = bot_globals.Server_Unog.get_member_named(item.get('username'))
             if not member:
                 continue
-            await approve_user(interaction.guild.me,
-                               member,
-                               newName=item.get('name'),
-                               eMail=item.get('email'),
-                               birthday=item.get('birthday'),
-                               info2="Jam formuyla eklendim.")
+            if not is_user_member(member):
+                await approve_user(interaction.guild.me,
+                                    member,
+                                    newName=item.get('name'),
+                                    eMail=item.get('email'),
+                                    birthday=item.get('birthday'),
+                                    info2="Jam formuyla eklendim.")
             await create_jam_participant(member)
-
         await interaction.followup.send(
             "İçe aktarım başarılı ✅ Formda ismi sunucuda bulunabilen herkes onaylı üye yapıldı.",
             ephemeral=True
         )
 
+    @jam_mod.command(name="üyeyi-katılımcı-yap", description="Seçilen üyeyi jam katılımcısı yapar.")
+    @discord.app_commands.describe(hedef_kullanici="katılımcı olucak üye")
+    @app_commands.check(check_is_jam_mod)
+    async def make_user_participant(self,interaction: Interaction,hedef_kullanici : Member):
+        check_is_jam_present(interaction)
+        participant = bot_globals.TABLE_JAM_CURRENT_PARTICIPANTS.get(Query().discordID == hedef_kullanici.id)
+        if participant:
+            raise TargetUserIsAlreadyJamParticipantException()
+        await create_jam_participant(hedef_kullanici)
+        await interaction.response.send_message("✅ Üye başarıyla katılımcı yapıldı.",ephemeral=True)
 
 
     # @jam_mod.command(name="terfi", description="Oyun sayfası eklenmiş olan ekipleri terfi eder ve Jammer rolünü ekler.")
