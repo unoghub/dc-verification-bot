@@ -58,13 +58,14 @@ def setup_events():
         
     @bot_globals.UnogBot.event
     async def on_member_join(member : Member):
-        user = bot_globals.TABLE_MEMBERS.get(Query().id == member.id)
-        if user: #member is in db
-            memberRole = bot_globals.Server_Unog.get_role(bot_globals.ROLEID_MEMBER)
-            await member.add_roles(memberRole)
+        
+        form_doc = bot_globals.TABLE_JAM_FORMS.get(Query().username == member.name)
+        if form_doc:
+            await approve_user(None,member,form_doc.get('name'),form_doc.get('email'),form_doc.get('birthday'),"Jam formundan katıldım")
+            await create_jam_participant(member.id)
         else:
-
-            form_doc = bot_globals.TABLE_JAM_FORMS.get(Query().username == member.name)
-            if form_doc:
-                await approve_user(None,member,form_doc.get('name'),form_doc.get('email'),form_doc.get('birthday'),"Jam formundan katıldım")
-                await create_jam_participant(member.id)
+            user = bot_globals.TABLE_MEMBERS.get(Query().id == member.id)
+            if user: #member is in db
+                memberRole = bot_globals.Server_Unog.get_role(bot_globals.ROLEID_MEMBER)
+                await member.add_roles(memberRole)
+                await member.edit(nick=user.get('name'))

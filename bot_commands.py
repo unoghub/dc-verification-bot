@@ -312,6 +312,7 @@ class JamModCog(commands.Cog):
                                eMail=item.get('email'),
                                birthday=item.get('birthday'),
                                info2="Jam formuyla eklendim.")
+            await create_jam_participant(member)
 
         await interaction.followup.send(
             "İçe aktarım başarılı ✅ Formda ismi sunucuda bulunabilen herkes onaylı üye yapıldı.",
