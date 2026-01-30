@@ -33,7 +33,7 @@ ROLEID_DIRECTOR = int(os.getenv('ROLEID_DIRECTOR')) # Direktör
 ROLEID_APPROVER = int(os.getenv('ROLEID_APPROVER')) # Alım Sorumlusu
 ROLEID_JAM_MOD = int(os.getenv('ROLEID_JAM_MOD')) # Jam Moderatörü
 ROLEID_VOLUNTEER = int(os.getenv('ROLEID_VOLUNTEER')) # Gönüllü
-ROLEID_MEMBER = int(os.getenv('ROLEID_MEMBER')) # Üye
+ROLEID_MEMBER = int(os.getenv('ROLEID_MEMBER')) # Onaylı Üye
 
 SERVERID_UNOG = int(os.getenv('SERVERID_UNOG')) # Sunucu ID
 
@@ -56,7 +56,10 @@ PERMISSION_OVERWRITE_JAM_TEAM_MEMBER_VC : PermissionOverwrite = PermissionOverwr
                                                                             add_reactions=True,
                                                                             connect=True,
                                                                             speak=True,
-                                                                            use_application_commands=True)
+                                                                            use_application_commands=True,
+                                                                            use_voice_activation=True,
+                                                                            stream=True,
+                                                                            )
 PERMISSION_OVERWRITE_JAM_VERIFIEDMEMBER_VC : PermissionOverwrite = PermissionOverwrite(
                                                                             view_channel=True,
                                                                             send_messages=False,

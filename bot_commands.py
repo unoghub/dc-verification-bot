@@ -1,3 +1,4 @@
+import io
 import discord
 import json
 import os
@@ -329,6 +330,57 @@ class JamModCog(commands.Cog):
             raise TargetUserIsAlreadyJamParticipantException()
         await create_jam_participant(hedef_kullanici)
         await interaction.response.send_message("✅ Üye başarıyla katılımcı yapıldı.",ephemeral=True)
+
+    @jam_mod.command(name="dosyadakileri-katılımcı-yap", description="Seçilen dosyadaki herkesi jam katılımcısı yapar.")
+    @discord.app_commands.describe(dosya="kullanılacak dosya")
+    @app_commands.check(check_is_jam_mod)
+    async def make_users_from_folder_participant(self,interaction: Interaction,dosya : Attachment):
+        check_is_jam_present(interaction)
+        await interaction.response.defer()
+
+        if not dosya:
+            await interaction.followup.send("❌ Lütfen dosya ekleyin.", ephemeral=True)
+            return
+
+        file_bytes = await dosya.read()
+        text = file_bytes.decode("utf-8", errors="ignore")
+
+        lines = text.splitlines()
+
+        memberRole : Role = bot_globals.Server_Unog.get_role(bot_globals.ROLEID_MEMBER)
+        jam_doc = bot_globals.TABLE_JAM_CURRENT.get(Query()._type == "meta")
+        jam_participant_id = jam_doc.get('participantRoleID')
+        participantRole : Role = bot_globals.Server_Unog.get_role(jam_participant_id)
+
+        if not participantRole:
+            await interaction.followup.send("❌ Jam katılımcısı rolü bulunamıyor.",ephemeral=True)
+            return
+
+        end_msg : str = "✅ İşlem başarılı, bu işlemin yanında bulunamayan kullanıcılar aşağıdaki gibi listelenmiştir:"
+        absences : str = ""
+
+        for i, line in enumerate(lines, start=1):
+            name = line.strip().split(",")[0].strip().title()
+            username = line.strip().split(",")[1].strip().removeprefix("@")
+
+            user = bot_globals.Server_Unog.get_member_named(username)
+            if not user:
+                absences += line + "\n"
+            else:
+                if not is_user_member(user=user):
+                    await user.add_roles(memberRole)
+                    await user.edit(nick=name)
+                if not is_user_in_jam(user):
+                    await create_jam_participant(user)
+        
+        
+        file = discord.File(
+            io.BytesIO(absences.encode("utf-8")),
+            filename="output.txt"
+        )
+
+        await interaction.followup.send(end_msg,file=file,ephemeral=True)
+
 
 
     # @jam_mod.command(name="terfi", description="Oyun sayfası eklenmiş olan ekipleri terfi eder ve Jammer rolünü ekler.")
