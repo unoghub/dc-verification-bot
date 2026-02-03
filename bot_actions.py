@@ -262,8 +262,8 @@ async def on_jam_submit_approve(interaction : Interaction):
     teamName = interaction.message.embeds[0].title.split(" ")[0].removeprefix("'").removesuffix("'")
     team_doc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(Query().teamName == teamName)
     bot_globals.TABLE_JAM_CURRENT_TEAMS.update({'passed':True},doc_ids=[team_doc.doc_id])
-    await interaction.message.add_reaction("✅")
     await disable_submission_form(interaction=interaction)
+    await interaction.message.add_reaction("✅")
 
 async def on_jam_submit_deny(interaction: Interaction):
     approver = is_user_approver(interaction.user)
@@ -272,8 +272,8 @@ async def on_jam_submit_deny(interaction: Interaction):
     teamName = interaction.message.embeds[0].title.split(" ")[0].removeprefix("'").removesuffix("'")
     team_doc = bot_globals.TABLE_JAM_CURRENT_TEAMS.get(Query().teamName == teamName)
     bot_globals.TABLE_JAM_CURRENT_TEAMS.update({'passed':False},doc_ids=[team_doc.doc_id])
-    await interaction.message.add_reaction("❌")
     await disable_submission_form(interaction=interaction)
+    await interaction.message.add_reaction("❌")
 
 async def create_jam(shortName :str,fullName:str,unix_start:int,unix_end:int,url:str,description:str =""):
 
